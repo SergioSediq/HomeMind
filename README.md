@@ -7,12 +7,6 @@ A full-stack, AI-powered real estate chatbot that **aggregates**, **analyzes**, 
 [![Live App](https://img.shields.io/badge/🌐_Live_App-homemind.vercel.app-blue?style=for-the-badge)](https://homemind.vercel.app/)
 [![API Docs](https://img.shields.io/badge/📡_API_Docs-homemind--backend.vercel.app-green?style=for-the-badge)](https://homemind-backend.vercel.app/api-docs)
 
-<p align="center">
-  <a href="https://homemind.vercel.app/">
-    <img src="img/logo.png" alt="HomeMind Logo" width="35%" style="border-radius: 8px" />
-  </a>
-</p>
-
 ---
 
 ## ✨ What Makes HomeMind Special
