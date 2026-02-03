@@ -1,0 +1,14 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: homemind-backend-pdb
+  namespace: homemind
+  labels:
+    app: homemind-backend
+    app.kubernetes.io/part-of: homemind
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: homemind-backend
+  unhealthyPodEvictionPolicy: AlwaysAllow

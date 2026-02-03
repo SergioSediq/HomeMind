@@ -1,0 +1,118 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: homemind-backend-sa
+  namespace: homemind
+  labels:
+    app: homemind-backend
+    app.kubernetes.io/part-of: homemind
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: homemind-frontend-sa
+  namespace: homemind
+  labels:
+    app: homemind-frontend
+    app.kubernetes.io/part-of: homemind
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: homemind-backend-role
+  namespace: homemind
+rules:
+  # Allow reading ConfigMaps
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+  # Allow reading Secrets
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list"]
+  # Allow listing pods (for service discovery)
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: homemind-backend-rolebinding
+  namespace: homemind
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: homemind-backend-role
+subjects:
+  - kind: ServiceAccount
+    name: homemind-backend-sa
+    namespace: homemind
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: homemind-frontend-role
+  namespace: homemind
+rules:
+  # Minimal permissions for frontend
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: homemind-frontend-rolebinding
+  namespace: homemind
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: homemind-frontend-role
+subjects:
+  - kind: ServiceAccount
+    name: homemind-frontend-sa
+    namespace: homemind
+---
+# Deployment ServiceAccount for CI/CD
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: homemind-deployer
+  namespace: homemind
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: homemind-deployer-role
+  namespace: homemind
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["services", "configmaps", "secrets", "pods", "pods/log"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "networkpolicies"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: homemind-deployer-rolebinding
+  namespace: homemind
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: homemind-deployer-role
+subjects:
+  - kind: ServiceAccount
+    name: homemind-deployer
+    namespace: homemind

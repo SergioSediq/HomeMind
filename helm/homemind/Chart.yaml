@@ -1,0 +1,17 @@
+apiVersion: v2
+name: homemind
+description: A Helm chart for HomeMind AI Chatbot application
+type: application
+version: 1.1.0
+appVersion: "1.0.0"
+keywords:
+  - homemind
+  - real-estate
+  - chatbot
+  - ai
+home: https://github.com/SergioSediq/HomeMind
+sources:
+  - https://github.com/SergioSediq/HomeMind
+maintainers:
+  - name: Sergio Sediq
+    email: sediqsergio@gmail.com

@@ -1,0 +1,119 @@
+{
+  "name": "homemind-chat",
+  "displayName": "HomeMind Chat",
+  "description": "Chat with HomeMind about real estate, directly in VS Code.",
+  "version": "1.1.2",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SergioSediq/HomeMind.git"
+  },
+  "publisher": "sergiosediq",
+  "author": "Sergio Sediq <sediqsergio@gmail.com> (https://github.com/SergioSediq)",
+  "keywords": [
+    "vscode",
+    "extension",
+    "chatbot",
+    "homemind",
+    "chapel hill",
+    "real estate",
+    "webview",
+    "iframe",
+    "artificial intelligence",
+    "ai",
+    "machine learning",
+    "estate",
+    "property",
+    "housing",
+    "real estate agent",
+    "real estate market"
+  ],
+  "homepage": "https://github.com/SergioSediq/HomeMind#readme",
+  "bugs": {
+    "url": "https://github.com/SergioSediq/HomeMind/issues"
+  },
+  "engines": {
+    "vscode": "^1.50.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:homemindChat.openChat"
+  ],
+  "main": "./out/extension.js",
+  "icon": "images/logo.png",
+  "contributes": {
+    "configuration": {
+      "type": "object",
+      "title": "HomeMind Chat",
+      "properties": {
+        "homemindChat.panelTitle": {
+          "type": "string",
+          "default": "HomeMind Chat",
+          "description": "Title of the chat panel."
+        },
+        "homemindChat.viewColumn": {
+          "type": "number",
+          "default": 1,
+          "enum": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "enumDescriptions": [
+            "Active column",
+            "First column",
+            "Second column",
+            "Third column"
+          ],
+          "description": "Which editor column to open the chat panel in."
+        },
+        "homemindChat.retainContext": {
+          "type": "boolean",
+          "default": true,
+          "description": "Keep chat context alive when the panel is hidden."
+        },
+        "homemindChat.enableScripts": {
+          "type": "boolean",
+          "default": true,
+          "description": "Allow scripts in the chat Webview."
+        },
+        "homemindChat.iframeWidth": {
+          "type": "string",
+          "default": "100%",
+          "description": "CSS width of the chat iframe."
+        },
+        "homemindChat.iframeHeight": {
+          "type": "string",
+          "default": "100%",
+          "description": "CSS height of the chat iframe."
+        },
+        "homemindChat.openOnStartup": {
+          "type": "boolean",
+          "default": false,
+          "description": "Open the chat panel automatically when VS Code starts."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "homemindChat.openChat",
+        "title": "HomeMind Chat: Open Chat"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -w -p ./",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^12.20.55",
+    "@types/vscode": "^1.50.0",
+    "typescript": "^4.0.0",
+    "vsce": "^1.91.0"
+  }
+}

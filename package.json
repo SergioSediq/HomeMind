@@ -1,0 +1,48 @@
+{
+  "name": "homemind",
+  "version": "1.1.0",
+  "description": "🏠✨ AI-powered home search assistant · Real estate chatbot with RAG, Neo4j graph, LLM & Mixture-of-Experts · Chapel Hill, NC & beyond",
+  "main": "dist/index.js",
+  "author": "Sergio Sediq <sediqsergio@gmail.com> (https://github.com/SergioSediq)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SergioSediq/HomeMind.git"
+  },
+  "keywords": [
+    "real-estate",
+    "chatbot",
+    "ai",
+    "assistant",
+    "estate",
+    "home",
+    "property",
+    "apartment",
+    "recommendation"
+  ],
+  "bugs": {
+    "url": "https://github.com/SergioSediq/HomeMind/issues"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "cd frontend && npm run dev",
+    "dev": "concurrently \"npm run frontend\" \"npm run backend\"",
+    "frontend": "cd frontend && npm run dev",
+    "backend": "cd backend && npm start",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,css,scss,html}\"",
+    "lint": "prettier --check \"**/*.{ts,tsx,js,jsx,json,css,scss,html}\"",
+    "store": "cd backend && ts-node src/scripts/upsertProperties.ts",
+    "jsdoc": "jsdoc -c jsdoc.json",
+    "typedoc:backend": "typedoc --tsconfig backend/tsconfig.json backend/src --out docs-backend --entryPointStrategy expand",
+    "typedoc:frontend": "typedoc --tsconfig frontend/tsconfig.json frontend --out docs-frontend --entryPointStrategy expand"
+  },
+  "dependencies": {
+    "concurrently": "^9.2.1",
+    "prettier": "^3.4.2"
+  },
+  "private": false,
+  "devDependencies": {
+    "jsdoc": "^4.0.4",
+    "typedoc": "^0.28.7"
+  }
+}

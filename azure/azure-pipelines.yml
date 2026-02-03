@@ -1,0 +1,69 @@
+trigger:
+  - main
+
+variables:
+  azureSubscription: $(AZURE_SUBSCRIPTION)
+  resourceGroup: $(RESOURCE_GROUP)
+  environmentName: $(ENVIRONMENT_NAME)
+  acrName: $(ACR_NAME)
+  containerImageName: homemind-backend
+  containerAppName: $(ENVIRONMENT_NAME)-backend-ca
+  containerAppEnv: $(ENVIRONMENT_NAME)-aca-env
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+  - stage: Build
+    displayName: Build and push container image
+    jobs:
+      - job: Build
+        steps:
+          - task: AzureCLI@2
+            displayName: Build image in ACR
+            inputs:
+              azureSubscription: $(azureSubscription)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                IMAGE_TAG=$(echo $(Build.SourceVersion) | cut -c1-12)
+                echo "##vso[task.setvariable variable=imageTag]$IMAGE_TAG"
+
+                az acr build \
+                  --resource-group $(resourceGroup) \
+                  --registry $(acrName) \
+                  --image $(containerImageName):$IMAGE_TAG \
+                  -f backend/Dockerfile .
+
+  - stage: Deploy
+    displayName: Deploy to Azure Container Apps
+    dependsOn: Build
+    jobs:
+      - job: Deploy
+        steps:
+          - task: AzureCLI@2
+            displayName: Update container app revision
+            inputs:
+              azureSubscription: $(azureSubscription)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                IMAGE_TAG=$(imageTag)
+                if [[ -z "$IMAGE_TAG" ]]; then
+                  echo "Image tag variable not set" >&2
+                  exit 1
+                fi
+
+                REGISTRY_URL=$(az acr show --name $(acrName) --query loginServer -o tsv)
+                IMAGE=$REGISTRY_URL/$(containerImageName):$IMAGE_TAG
+
+                az containerapp update \
+                  --name $(containerAppName) \
+                  --resource-group $(resourceGroup) \
+                  --environment $(containerAppEnv) \
+                  --image "$IMAGE" \
+                  --set-env-vars VERSION=$IMAGE_TAG
+
+                az containerapp ingress show --name $(containerAppName) --resource-group $(resourceGroup) --query fqdn -o tsv

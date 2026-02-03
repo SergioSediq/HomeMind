@@ -1,0 +1,23 @@
+{{- if and .Values.monitoring.enabled .Values.monitoring.serviceMonitor.enabled .Values.backend.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "homemind.fullname" . }}-backend
+  namespace: {{ include "homemind.namespace" . }}
+  labels:
+    {{- include "homemind.labels" . | nindent 4 }}
+    {{- with .Values.monitoring.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ include "homemind.namespace" . }}
+  selector:
+    matchLabels:
+      {{- include "homemind.componentLabels" (dict "root" . "component" "backend") | nindent 6 }}
+  endpoints:
+    - port: http
+      path: {{ .Values.monitoring.serviceMonitor.scrapePath }}
+      interval: {{ .Values.monitoring.serviceMonitor.interval }}
+{{- end }}

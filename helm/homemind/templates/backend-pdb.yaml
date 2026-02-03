@@ -1,0 +1,15 @@
+{{- if and .Values.backend.enabled .Values.backend.pdb.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "homemind.componentName" (dict "root" . "component" "backend") }}-pdb
+  namespace: {{ include "homemind.namespace" . }}
+  labels:
+    {{- include "homemind.componentLabels" (dict "root" . "component" "backend") | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.backend.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "homemind.selectorLabels" (dict "root" . "component" "backend") | nindent 6 }}
+  unhealthyPodEvictionPolicy: AlwaysAllow
+{{- end }}

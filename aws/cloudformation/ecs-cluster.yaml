@@ -1,0 +1,28 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: homemind ECS cluster with Container Insights enabled.
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: homemind
+  EnableContainerInsights:
+    Type: String
+    AllowedValues: [enabled, disabled]
+    Default: enabled
+
+Resources:
+  homemindCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub '${EnvironmentName}-ecs-cluster'
+      ClusterSettings:
+        - Name: containerInsights
+          Value: !Ref EnableContainerInsights
+      Configuration:
+        ExecuteCommandConfiguration:
+          Logging: DEFAULT
+
+Outputs:
+  ClusterName:
+    Description: ECS Cluster Name
+    Value: !Ref homemindCluster

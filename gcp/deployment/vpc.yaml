@@ -1,0 +1,48 @@
+resources:
+  - name: homemind-vpc
+    type: compute.v1.network
+    properties:
+      autoCreateSubnetworks: false
+      routingConfig:
+        routingMode: REGIONAL
+
+  - name: homemind-subnet-private-a
+    type: compute.v1.subnetwork
+    properties:
+      network: $(ref.homemind-vpc.selfLink)
+      region: us-east1
+      ipCidrRange: 10.40.1.0/24
+      privateIpGoogleAccess: true
+
+  - name: homemind-subnet-private-b
+    type: compute.v1.subnetwork
+    properties:
+      network: $(ref.homemind-vpc.selfLink)
+      region: us-central1
+      ipCidrRange: 10.40.2.0/24
+      privateIpGoogleAccess: true
+
+  - name: homemind-router
+    type: compute.v1.router
+    properties:
+      region: us-east1
+      network: $(ref.homemind-vpc.selfLink)
+      bgp:
+        asn: 64514
+
+  - name: homemind-nat
+    type: compute.v1.routerNat
+    properties:
+      router: $(ref.homemind-router.name)
+      region: us-east1
+      natIpAllocateOption: AUTO_ONLY
+      sourceSubnetworkIpRangesToNat: ALL_SUBNETWORKS_ALL_IP_RANGES
+      enableEndpointIndependentMapping: true
+
+outputs:
+  - name: network
+    value: $(ref.homemind-vpc.selfLink)
+  - name: subnetEast
+    value: $(ref.homemind-subnet-private-a.selfLink)
+  - name: subnetCentral
+    value: $(ref.homemind-subnet-private-b.selfLink)

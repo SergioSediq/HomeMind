@@ -1,0 +1,355 @@
+# Default values for homemind
+# This is a YAML-formatted file.
+
+nameOverride: ""
+fullnameOverride: ""
+
+namespace:
+  create: false
+  name: "homemind"
+
+global:
+  namespace: ""
+  registry: ghcr.io/your-org
+  imagePullPolicy: IfNotPresent
+  imagePullSecrets: []
+  labels: {}
+  annotations: {}
+  cloud:
+    provider: "" # aws | azure | gcp | oracle | onprem
+    ingress:
+      annotations: {}
+    service:
+      annotations: {}
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+configMap:
+  create: true
+  name: homemind-shared-config
+  data:
+    NODE_ENV: production
+    PORT: "3001"
+    FRONTEND_PORT: "3000"
+    LOG_LEVEL: info
+    CORS_ORIGIN: "*"
+
+secrets:
+  create: false
+  name: homemind-secrets
+  data:
+    mongoUri: ""
+    jwtSecret: ""
+    googleAiApiKey: ""
+    pineconeApiKey: ""
+    pineconeIndex: ""
+
+backend:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: homemind-app-backend
+    tag: latest
+  containerPort: 3001
+  service:
+    type: ClusterIP
+    port: 80
+    annotations: {}
+  env:
+    - name: MONGO_URI
+      valueFrom:
+        secretKeyRef:
+          name: homemind-secrets
+          key: mongoUri
+    - name: GOOGLE_AI_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: homemind-secrets
+          key: googleAiApiKey
+    - name: PINECONE_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: homemind-secrets
+          key: pineconeApiKey
+    - name: JWT_SECRET
+      valueFrom:
+        secretKeyRef:
+          name: homemind-secrets
+          key: jwtSecret
+    - name: PINECONE_INDEX
+      valueFrom:
+        secretKeyRef:
+          name: homemind-secrets
+          key: pineconeIndex
+  extraEnv: []
+  envFrom:
+    - configMapRef:
+        name: homemind-shared-config
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+    behavior:
+      scaleDown:
+        stabilizationWindowSeconds: 300
+        policies:
+          - type: Percent
+            value: 50
+            periodSeconds: 60
+          - type: Pods
+            value: 2
+            periodSeconds: 60
+        selectPolicy: Min
+      scaleUp:
+        stabilizationWindowSeconds: 60
+        policies:
+          - type: Percent
+            value: 100
+            periodSeconds: 30
+          - type: Pods
+            value: 4
+            periodSeconds: 30
+        selectPolicy: Max
+  pdb:
+    enabled: true
+    minAvailable: 1
+  probes:
+    readiness:
+      enabled: true
+      httpGet:
+        path: /health
+        port: http
+      initialDelaySeconds: 10
+      periodSeconds: 15
+    liveness:
+      enabled: true
+      httpGet:
+        path: /health
+        port: http
+      initialDelaySeconds: 30
+      periodSeconds: 30
+  podAnnotations:
+    consul.hashicorp.com/connect-service: "homemind-backend"
+    consul.hashicorp.com/connect-service-port: "http"
+  podLabels: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+  podSecurityContext: {}
+  securityContext: {}
+
+frontend:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: homemind-app-frontend
+    tag: latest
+  containerPort: 3000
+  service:
+    type: ClusterIP
+    port: 80
+    annotations: {}
+  env:
+    - name: NEXT_PUBLIC_API_BASE_URL
+      value: "https://api.homemind.local"
+  extraEnv: []
+  resources:
+    requests:
+      cpu: 150m
+      memory: 256Mi
+    limits:
+      cpu: 300m
+      memory: 512Mi
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 75
+    targetMemoryUtilizationPercentage: 85
+    behavior:
+      scaleDown:
+        stabilizationWindowSeconds: 300
+        policies:
+          - type: Percent
+            value: 50
+            periodSeconds: 60
+      scaleUp:
+        stabilizationWindowSeconds: 30
+        policies:
+          - type: Percent
+            value: 100
+            periodSeconds: 30
+          - type: Pods
+            value: 3
+            periodSeconds: 30
+        selectPolicy: Max
+  pdb:
+    enabled: true
+    minAvailable: 1
+  probes:
+    readiness:
+      enabled: false
+    liveness:
+      enabled: false
+  podAnnotations:
+    consul.hashicorp.com/connect-service: "homemind-frontend"
+    consul.hashicorp.com/connect-service-port: "http"
+  podLabels: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+  podSecurityContext: {}
+  securityContext: {}
+
+grpc:
+  enabled: false
+  replicaCount: 2
+  image:
+    repository: homemind-app-grpc
+    tag: latest
+  containerPort: 50051
+  service:
+    type: ClusterIP
+    port: 50051
+    annotations: {}
+  env:
+    - name: GRPC_HOST
+      value: "0.0.0.0"
+    - name: GRPC_PORT
+      value: "50051"
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 400m
+      memory: 512Mi
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  pdb:
+    enabled: true
+    minAvailable: 1
+  probes:
+    readiness:
+      enabled: true
+      tcpSocket:
+        port: grpc
+      initialDelaySeconds: 10
+      periodSeconds: 15
+    liveness:
+      enabled: true
+      tcpSocket:
+        port: grpc
+      initialDelaySeconds: 30
+      periodSeconds: 30
+  podAnnotations: {}
+  podLabels: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+  podSecurityContext: {}
+  securityContext: {}
+
+mcp:
+  enabled: false
+  replicaCount: 1
+  image:
+    repository: homemind-app-mcp
+    tag: latest
+  containerPort: 8787
+  service:
+    type: ClusterIP
+    port: 8787
+    annotations: {}
+  env: []
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+  pdb:
+    enabled: false
+  probes:
+    readiness:
+      enabled: false
+    liveness:
+      enabled: false
+  podAnnotations: {}
+  podLabels: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+  podSecurityContext: {}
+  securityContext: {}
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+  hosts:
+    - host: homemind.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: frontend
+        - path: /api
+          pathType: Prefix
+          service: backend
+  tls:
+    - secretName: homemind-tls
+      hosts:
+        - homemind.example.com
+
+monitoring:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    scrapePath: /metrics
+    labels: {}
+  prometheusRules:
+    enabled: false
+    labels: {}
+    groups: []
+
+security:
+  networkPolicies:
+    enabled: true
+    allowIngressNamespaceSelector:
+      matchLabels:
+        name: ingress-nginx
+    allowMonitoringNamespaceSelector:
+      matchLabels:
+        name: monitoring
+  rbac:
+    enabled: true
+
+persistence:
+  backup:
+    enabled: false
+    storageClass: standard
+    size: 50Gi

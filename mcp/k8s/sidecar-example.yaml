@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: homemind-agentic
+  namespace: homemind
+  labels:
+    app: homemind-agentic
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: homemind-agentic
+  template:
+    metadata:
+      labels:
+        app: homemind-agentic
+    spec:
+      containers:
+        - name: agentic-ai
+          image: ghcr.io/your-org/homemind-agentic:latest
+          envFrom:
+            - configMapRef:
+                name: agentic-ai-config
+            - secretRef:
+                name: agentic-ai-secrets
+          args: ["--langgraph"]
+        - name: mcp-server
+          image: ghcr.io/your-org/homemind-mcp:latest
+          envFrom:
+            - configMapRef:
+                name: agentic-ai-config
+            - secretRef:
+                name: agentic-ai-secrets
+          tty: true
+          stdinOnce: false
+          command: ["node", "dist/server.js"]
+      restartPolicy: Always

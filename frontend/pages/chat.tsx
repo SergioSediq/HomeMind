@@ -1,0 +1,3585 @@
+"use client";
+
+import React, { useState, useEffect, useRef, useMemo } from "react";
+import type { Dispatch, SetStateAction } from "react";
+import Head from "next/head";
+import Link from "next/link";
+import Cookies from "js-cookie";
+import { motion, AnimatePresence } from "framer-motion";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
+import { toast } from "sonner";
+import {
+  Loader2,
+  BotMessageSquare,
+  Send,
+  Trash2,
+  Search,
+  Sun,
+  Moon,
+  User as UserIcon,
+  PlusCircle,
+  Pencil,
+  X,
+  Menu,
+  ChevronLeft,
+  BarChart3,
+  Calculator,
+  MapPin,
+  GitBranch,
+  ThumbsUp,
+  ThumbsDown,
+  ChevronDown,
+  Inbox,
+  LogIn,
+  Settings,
+  Cpu,
+  Zap,
+  Check,
+  Copy,
+  Users,
+  Square,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from "@/components/ui/tooltip";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogClose,
+} from "@/components/ui/dialog";
+import Chart, { ChartConfiguration } from "chart.js/auto";
+
+import { API_BASE_URL } from "@/lib/api";
+import { KeyboardShortcutsDialog } from "@/components/KeyboardShortcutsDialog";
+
+const containerVariants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: { when: "beforeChildren", staggerChildren: 0.1 },
+  },
+};
+
+const bubbleVariants = {
+  hidden: { opacity: 0, y: 10, scale: 0.95 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    scale: 1,
+    transition: { duration: 0.3, ease: "easeOut" },
+  },
+};
+
+const desktopSidebarVariants = {
+  visible: { width: "18rem", transition: { duration: 0.6, ease: "easeInOut" } },
+  hidden: { width: "0rem", transition: { duration: 0.6, ease: "easeInOut" } },
+};
+
+const rowVariants = {
+  hidden: { opacity: 0, y: 12 },
+  show: (index: number) => ({
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.3, ease: "easeOut", delay: index * 0.05 },
+  }),
+};
+
+type ConversationRowProps = {
+  conv: GuestConversation;
+  index: number;
+  selectedConvoId: string | null;
+  namingInProgress: Set<string>;
+  loadingConversations: Set<string>;
+  highlightId: string | null;
+  isStreaming: boolean;
+  enableRowAnimations: boolean;
+  enableLayout: boolean;
+  itemRefs: React.RefObject<Record<string, HTMLElement | null>>;
+  onSelect: (conv: GuestConversation) => void;
+  setRenamingId: Dispatch<SetStateAction<string | null>>;
+  setDeleteId: Dispatch<SetStateAction<string | null>>;
+  isMobile: boolean;
+  toggleSidebar: () => void;
+};
+
+const ConversationRow: React.FC<ConversationRowProps> = ({
+  conv,
+  index,
+  selectedConvoId,
+  namingInProgress,
+  loadingConversations,
+  highlightId,
+  isStreaming,
+  enableRowAnimations,
+  enableLayout,
+  itemRefs,
+  onSelect,
+  setRenamingId,
+  setDeleteId,
+  isMobile,
+  toggleSidebar,
+}) => {
+  const isSelected = conv._id === selectedConvoId;
+  const isNaming = namingInProgress.has(conv._id);
+  const shouldBlink = isNaming;
+
+  if (shouldBlink) {
+    console.log(
+      "[ConversationRow] Blinking active for:",
+      conv._id,
+      conv.title,
+      { isNaming, isLoading: loadingConversations.has(conv._id) },
+    );
+  }
+
+  return (
+    <motion.div
+      key={conv._id}
+      ref={(el) => {
+        const curr = itemRefs.current;
+        if (curr) curr[conv._id] = el;
+      }}
+      variants={enableRowAnimations ? rowVariants : undefined}
+      custom={index}
+      initial={enableRowAnimations ? "hidden" : false}
+      animate={enableRowAnimations ? "show" : false}
+      layout={enableLayout}
+      className={`flex items-center justify-between border-b border-sidebar-border p-2 shadow-sm transition-colors duration-500 m-2 rounded-md dark:rounded-bl-none dark:rounded-br-none
+        ${isSelected ? "bg-muted dark:bg-primary/50" : "hover:bg-muted"}
+        ${highlightId === conv._id ? "bg-primary/10 dark:bg-primary/20" : ""}
+        ${isStreaming ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+      onClick={() => {
+        if (isStreaming) {
+          toast.error(
+            "Please wait for the current response to complete before switching conversations",
+          );
+          return;
+        }
+        onSelect(conv);
+        if (isMobile) toggleSidebar();
+      }}
+    >
+      <div className="flex-1 min-w-0 select-none">
+        <span
+          className={`block truncate ${shouldBlink ? "animate-pulse-gentle" : ""}`}
+        >
+          {conv.title || "Untitled Conversation"}
+        </span>
+      </div>
+
+      <div className="flex items-center gap-3 flex-shrink-0">
+        <button
+          onClick={(e: React.MouseEvent) => {
+            e.stopPropagation();
+            setRenamingId(conv._id);
+          }}
+          title="Rename"
+          className="cursor-pointer hover:text-blue-500"
+          aria-label="Rename Conversation"
+        >
+          <Pencil className="w-4 h-4" />
+        </button>
+        <button
+          onClick={(e: React.MouseEvent) => {
+            e.stopPropagation();
+            setDeleteId(conv._id);
+          }}
+          title="Delete"
+          className="cursor-pointer hover:text-red-500"
+          aria-label="Delete Conversation"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
+    </motion.div>
+  );
+};
+
+// ----------------------------------------------------------
+// ChartBlock Component for rendering Chart.js specs
+// ----------------------------------------------------------
+interface ChartBlockProps {
+  spec: ChartConfiguration["data"] | Record<string, unknown>;
+}
+
+export const ChartBlock: React.FC<ChartBlockProps> = React.memo(
+  ({ spec }: ChartBlockProps) => {
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const chartRef = useRef<Chart | null>(null);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stripAlpha = (color: any): any => {
+      if (typeof color === "string" && color.startsWith("rgba")) {
+        // convert "rgba(r, g, b, a)" â†’ "rgb(r, g, b)"
+        return color.replace(
+          /rgba\(\s*(\d+,\s*\d+,\s*\d+),\s*[\d.]+\s*\)/,
+          "rgb($1)",
+        );
+      }
+      if (Array.isArray(color)) {
+        return color.map(stripAlpha);
+      }
+      return color;
+    };
+
+    const getFontColor = () => {
+      const isDark = document.documentElement.classList.contains("dark");
+      if (canvasRef.current) {
+        return getComputedStyle(canvasRef.current).color;
+      }
+      return isDark ? "#ffffff" : "#000000";
+    };
+
+    const specString = JSON.stringify(spec);
+
+    useEffect(() => {
+      if (!canvasRef.current) return;
+
+      // reâ€‘parse the spec so we can safely mutate it
+      const config: ChartConfiguration = JSON.parse(specString);
+      const fontColor = getFontColor();
+
+      // enforce opaque colors on all datasets
+      if (config.data?.datasets) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        config.data.datasets.forEach((ds: any) => {
+          if (ds.backgroundColor)
+            ds.backgroundColor = stripAlpha(ds.backgroundColor);
+          if (ds.borderColor) ds.borderColor = stripAlpha(ds.borderColor);
+        });
+      }
+
+      const opts = config.options ?? {};
+      const plugins = opts.plugins ?? {};
+      const legend = plugins.legend ?? {};
+      const legendLabels = legend.labels ?? {};
+      const tooltip = plugins.tooltip ?? {};
+      config.options = {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 0 },
+        ...opts,
+        plugins: {
+          ...plugins,
+          legend: {
+            ...legend,
+            labels: {
+              ...legendLabels,
+              color: fontColor,
+            },
+          },
+          tooltip: {
+            ...tooltip,
+            titleColor: "#ffffff",
+            bodyColor: "#ffffff",
+            footerColor: "#ffffff",
+          },
+        },
+      };
+
+      const applyColorToAxis = (
+        axis: { ticks?: { color: string }; title?: { color: string }; scaleLabel?: { color: string } },
+        color: string,
+      ) => {
+        if (axis.ticks) axis.ticks.color = color;
+        if (axis.title) axis.title.color = color;
+        if (axis.scaleLabel) axis.scaleLabel.color = color;
+      };
+      const processScaleEntry = (
+        key: string,
+        axisOrArray: unknown,
+        color: string,
+      ) => {
+        console.log(key, axisOrArray);
+        if (Array.isArray(axisOrArray)) {
+          axisOrArray.forEach((axis: unknown) =>
+            applyColorToAxis(
+              axis as { ticks?: { color: string }; title?: { color: string }; scaleLabel?: { color: string } },
+              color,
+            ),
+          );
+        } else {
+          applyColorToAxis(
+            axisOrArray as { ticks?: { color: string }; title?: { color: string }; scaleLabel?: { color: string } },
+            color,
+          );
+        }
+      };
+      const applyColorToScales = (
+        scalesObj: Record<string, unknown>,
+        color: string,
+      ) => {
+        Object.entries(scalesObj).forEach(([key, axisOrArray]) =>
+          processScaleEntry(key, axisOrArray, color),
+        );
+      };
+      const scales = config.options.scales || {};
+      applyColorToScales(scales as Record<string, unknown>, fontColor);
+      // ===========================
+
+      if (chartRef.current) {
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-ignore
+        chartRef.current.config = config;
+        chartRef.current.update();
+      } else {
+        chartRef.current = new Chart(canvasRef.current, config);
+      }
+
+      // watch for dark/light toggle
+      const observer = new MutationObserver(() => {
+        const newColor = getFontColor();
+        const chart = chartRef.current!;
+        chart.options.plugins!.legend!.labels!.color = newColor;
+
+        applyColorToScales(
+          (chart.options.scales || {}) as Record<string, unknown>,
+          newColor,
+        );
+
+        chart.update();
+      });
+      observer.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ["class"],
+      });
+
+      return () => {
+        observer.disconnect();
+        chartRef.current?.destroy();
+        chartRef.current = null;
+      };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- stripAlpha is stable
+    }, [specString, getFontColor]);
+
+    return (
+      <div className="mb-4 w-full max-w-full">
+        <canvas
+          ref={canvasRef}
+          className="block w-full"
+          style={{ height: "300px" }}
+        />
+      </div>
+    );
+  },
+  (prev: ChartBlockProps, next: ChartBlockProps) =>
+    JSON.stringify(prev.spec) === JSON.stringify(next.spec),
+);
+
+ChartBlock.displayName = "ChartBlock";
+
+// ----------------------------------------------------------
+// ReactMarkdown Custom Components
+// ----------------------------------------------------------
+const markdownComponents = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars
+  text: ({ children, ...props }: any) => (
+    <>
+      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+      {children.map((child: any) =>
+        typeof child === "string" ? child.replaceAll(String.raw`\_`, "_") : child,
+      )}
+    </>
+  ),
+  // Headings
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  h1: ({ children, ...props }: any) => (
+    <h1
+      className="text-2xl font-bold my-4 border-b-2 border-gray-200 pb-2"
+      {...props}
+    >
+      {children}
+    </h1>
+  ),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  h2: ({ children, ...props }: any) => (
+    <h2
+      className="text-xl font-bold my-3 border-b border-gray-200 pb-1"
+      {...props}
+    >
+      {children}
+    </h2>
+  ),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  h3: ({ children, ...props }: any) => (
+    <h3 className="text-lg font-bold my-3" {...props}>
+      {children}
+    </h3>
+  ),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  h4: ({ children, ...props }: any) => (
+    <h4 className="text-base font-bold my-2" {...props}>
+      {children}
+    </h4>
+  ),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  h5: ({ children, ...props }: any) => (
+    <h5 className="text-sm font-bold my-2" {...props}>
+      {children}
+    </h5>
+  ),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  h6: ({ children, ...props }: any) => (
+    <h6 className="text-xs font-bold my-2" {...props}>
+      {children}
+    </h6>
+  ),
+  // Paragraph
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  p: ({ children, ...props }: any) => (
+    <p className="mb-3 leading-relaxed" {...props}>
+      {children}
+    </p>
+  ),
+  // Blockquote
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  blockquote: ({ children, ...props }: any) => (
+    <blockquote
+      className="border-l-4 border-gray-300 pl-4 italic text-gray-700 my-3"
+      {...props}
+    >
+      {children}
+    </blockquote>
+  ),
+  // Horizontal Rule
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  hr: ({ ...props }: any) => (
+    <hr className="border-t border-gray-300 my-3" {...props} />
+  ),
+  // Code Block & Inline Code
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  code: ({ inline, children, className, ...props }: any) => {
+    const content = String(children).trim();
+
+    // detect chart-spec code blocks
+    if (!inline && /language-chart-spec/.test(className || "")) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let spec: any;
+      try {
+        // first, try strict JSON
+        spec = JSON.parse(content);
+      } catch {
+        // if it looks like there's a function in there, try JS eval
+        if (/function\s*\(/.test(content)) {
+          try {
+            spec = eval("(" + content + ")");
+          } catch (err) {
+            console.error("Failed to eval chart-spec:", err);
+            spec = null;
+          }
+        }
+      }
+
+      if (spec) {
+        return <ChartBlock spec={spec} />;
+      } else {
+        // fallback plain code
+        return (
+          <pre
+            className="bg-gray-100 text-gray-800 p-2 rounded text-sm font-mono overflow-x-auto my-3"
+            {...props}
+          >
+            <code>{children}</code>
+          </pre>
+        );
+      }
+    }
+
+    // inline code
+    if (inline) {
+      return (
+        <code
+          className="bg-gray-100 text-gray-800 px-1 py-0.5 rounded text-sm font-mono"
+          {...props}
+        >
+          {children}
+        </code>
+      );
+    }
+
+    // other code blocks
+    return (
+      <pre
+        className="bg-gray-100 text-gray-800 p-2 rounded text-sm font-mono overflow-x-auto my-3"
+        {...props}
+      >
+        <code>{children}</code>
+      </pre>
+    );
+  },
+  // Table elements
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  table: ({ children, ...props }: any) => (
+    <div className="overflow-x-auto my-3">
+      <table
+        className="min-w-full border-collapse border border-gray-300 text-sm"
+        {...props}
+      >
+        {children}
+      </table>
+    </div>
+  ),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  thead: ({ children, ...props }: any) => (
+    <thead className="bg-background border-b border-gray-300" {...props}>
+      {children}
+    </thead>
+  ),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  tbody: ({ children, ...props }: any) => <tbody {...props}>{children}</tbody>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  tr: ({ children, ...props }: any) => (
+    <tr className="border-b last:border-0" {...props}>
+      {children}
+    </tr>
+  ),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  th: ({ children, ...props }: any) => (
+    <th
+      className="border border-gray-300 px-3 py-2 font-semibold text-left"
+      {...props}
+    >
+      {children}
+    </th>
+  ),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  td: ({ children, ...props }: any) => (
+    <td className="border border-gray-300 px-3 py-2 align-top" {...props}>
+      {children}
+    </td>
+  ),
+  // Lists
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ul: ({ children, ...props }: any) => (
+    <ul className="list-disc list-outside pl-4 my-3" {...props}>
+      {children}
+    </ul>
+  ),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ol: ({ children, ...props }: any) => (
+    <ol className="list-decimal list-outside pl-4 my-3 ml-2" {...props}>
+      {children}
+    </ol>
+  ),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  li: ({ children, ...props }: any) => (
+    <li className="my-1 marker:mr-2" {...props}>
+      {children}
+    </li>
+  ),
+  // Images (markdown: dynamic src from user content; next/image needs known domains)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  img: ({ src, alt, ...props }: any) => (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img className="max-w-full h-auto my-3" src={src} alt={alt ?? ""} {...props} />
+  ),
+  // Emphasis and strong (bold)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  em: ({ children, ...props }: any) => (
+    <em className="italic" {...props}>
+      {children}
+    </em>
+  ),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  strong: ({ children, ...props }: any) => (
+    <strong className="font-bold" {...props}>
+      {children}
+    </strong>
+  ),
+  // Strikethrough
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  del: ({ children, ...props }: any) => (
+    <del className="line-through" {...props}>
+      {children}
+    </del>
+  ),
+  // Custom Link: render external links as chips and, for Zillow property links,
+  // append an inline map icon that opens our map page for that specific ZPID.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  a: ({ children, href, ...props }: any) => {
+    const isZillow =
+      typeof href === "string" &&
+      /https?:\/\/www\.zillow\.com\/homedetails\/(\d+)_zpid\//.test(href);
+
+    let zpid: string | null = null;
+    if (isZillow && typeof href === "string") {
+      const re = /homedetails\/(\d+)_zpid/;
+      const m = re.exec(href);
+      if (m?.[1]) zpid = m[1];
+    }
+
+    return (
+      <span className="inline-flex items-center gap-1 align-middle flex-wrap max-w-full">
+        <a
+          href={href}
+          className="inline-block bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-sm font-medium hover:bg-blue-200 break-all"
+          style={{ maxWidth: zpid ? "calc(100% - 2rem)" : "100%" }}
+          target="_blank"
+          rel="noopener noreferrer"
+          {...props}
+        >
+          {children}
+        </a>
+        {zpid && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                asChild
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 ml-0.5 flex-shrink-0"
+                aria-label="View this property on the map"
+                title="View this property on the map"
+              >
+                <Link href={`/map?zpids=${encodeURIComponent(zpid)}`}>
+                  <MapPin className="w-4 h-4" />
+                </Link>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>View on map</TooltipContent>
+          </Tooltip>
+        )}
+      </span>
+    );
+  },
+};
+
+// ----------------------------------------------------------
+// Chat Types and Local Storage Helper
+// ----------------------------------------------------------
+type ChatMessage = {
+  id?: string;
+  role: "user" | "model";
+  text: string;
+  expertViews?: Record<string, string>;
+};
+
+type GuestConversation = {
+  _id: string;
+  title: string;
+  messages: ChatMessage[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+const LOCAL_CHAT_KEY = "homemindChat";
+const LOCAL_CONVOS_KEY = "homemindConvos";
+
+const createGuestId = () =>
+  `guest-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+
+const deriveGuestTitle = (messages: ChatMessage[], fallback: string) => {
+  const firstUser = messages.find(
+    (message) => message.role === "user" && message.text.trim(),
+  );
+  if (!firstUser) return fallback;
+  const cleaned = firstUser.text.trim().replaceAll(/\s+/g, " ");
+  return cleaned.length > 48 ? `${cleaned.slice(0, 48)}...` : cleaned;
+};
+
+const getGuestTitleSeed = (messages: ChatMessage[]) => {
+  const lastUser = [...messages]
+    .reverse()
+    .find((message) => message.role === "user" && message.text.trim());
+  return lastUser?.text?.trim() ?? "";
+};
+
+const buildGuestConversation = (messages: ChatMessage[]): GuestConversation => {
+  const now = new Date().toISOString();
+  return {
+    _id: createGuestId(),
+    title: deriveGuestTitle(messages, "New Conversation"),
+    messages,
+    createdAt: now,
+    updatedAt: now,
+  };
+};
+
+const loadGuestConvos = (): GuestConversation[] => {
+  if (globalThis.window === undefined) return [];
+  try {
+    const stored = localStorage.getItem(LOCAL_CONVOS_KEY);
+    if (stored) return JSON.parse(stored) as GuestConversation[];
+  } catch {
+    // ignore malformed storage
+  }
+
+  try {
+    const single = localStorage.getItem(LOCAL_CHAT_KEY);
+    if (single) {
+      const messages = JSON.parse(single);
+      if (Array.isArray(messages) && messages.length > 0) {
+        const convos = [buildGuestConversation(messages)];
+        localStorage.setItem(LOCAL_CONVOS_KEY, JSON.stringify(convos));
+        return convos;
+      }
+    }
+  } catch {
+    // ignore malformed storage
+  }
+
+  return [];
+};
+
+const persistGuestConvos = (convos: GuestConversation[]) => {
+  if (globalThis.window === undefined) return;
+  localStorage.setItem(LOCAL_CONVOS_KEY, JSON.stringify(convos));
+};
+
+function startTitlePolling(
+  convoId: string,
+  setLocalConvos: Dispatch<SetStateAction<GuestConversation[]>>,
+  setNamingInProgress: Dispatch<SetStateAction<Set<string>>>,
+): void {
+  const delays = [2000, 4000, 7000, 10000, 15000];
+  (async () => {
+    for (const delay of delays) {
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      try {
+        const pollRes = await fetch(`${API_BASE_URL}/api/conversations`, {
+          headers: { Authorization: `Bearer ${Cookies.get("homemind_token")}` },
+        });
+        if (pollRes.ok) {
+          const data = await pollRes.json();
+          setLocalConvos(data);
+          const updatedConvo = data.find((c: GuestConversation) => c._id === convoId);
+          if (updatedConvo && updatedConvo.title !== "New Conversation") {
+            setNamingInProgress((prev: Set<string>) => {
+              const next = new Set(prev);
+              next.delete(convoId);
+              return next;
+            });
+            return;
+          }
+        }
+      } catch (err) {
+        console.error("Failed to poll for updated title:", err);
+      }
+    }
+    setNamingInProgress((prev: Set<string>) => {
+      const next = new Set(prev);
+      next.delete(convoId);
+      return next;
+    });
+  })();
+}
+
+const getInitialMessages = (): ChatMessage[] => {
+  if (globalThis.window !== undefined && !Cookies.get("homemind_token")) {
+    const stored = localStorage.getItem(LOCAL_CHAT_KEY);
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored) as ChatMessage[];
+        return Array.isArray(parsed)
+          ? parsed.map((m) => ({ ...m, id: m.id ?? crypto.randomUUID() }))
+          : [];
+      } catch {
+        return [];
+      }
+    }
+  }
+  return [];
+};
+
+// ----------------------------------------------------------
+// ClientOnly Component
+// ----------------------------------------------------------
+const ClientOnly: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  if (!mounted) return null;
+  return <>{children}</>;
+};
+
+// ----------------------------------------------------------
+// Dark Mode Toggle Component
+// ----------------------------------------------------------
+const DarkModeToggle: React.FC = () => {
+  // On initial load, read the saved preference (fallback to system or light)
+  const [darkMode, setDarkMode] = useState(() => {
+    if (globalThis.window === undefined) return false;
+    const saved = localStorage.getItem("dark-mode");
+    if (saved !== null) return saved === "true";
+    return globalThis.window.matchMedia("(prefers-color-scheme: dark)").matches;
+  });
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (darkMode) {
+      root.classList.add("dark");
+      localStorage.setItem("dark-mode", "true");
+    } else {
+      root.classList.remove("dark");
+      localStorage.setItem("dark-mode", "false");
+    }
+    const newThemeColor = darkMode ? "#262626" : "#faf9f2";
+    const meta = document.querySelector("meta[name='theme-color']");
+    if (meta) meta.setAttribute("content", newThemeColor);
+  }, [darkMode]);
+
+  const toggleDarkMode = () => {
+    const next = !darkMode;
+    setDarkMode(next);
+    toast.success(next ? "Dark mode activated" : "Light mode activated");
+  };
+
+  return (
+    <button
+      onClick={toggleDarkMode}
+      className="inline-flex h-8 w-8 items-center justify-center rounded-full p-0 cursor-pointer transition-none hover:text-primary"
+      aria-label="Toggle Dark Mode"
+      title="Toggle Dark Mode"
+    >
+      {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+    </button>
+  );
+};
+
+// ----------------------------------------------------------
+// Top Bar Component
+// ----------------------------------------------------------
+type TopBarProps = {
+  onNewConvo: () => void;
+  onDeleteConvo?: () => void;
+  toggleSidebar: () => void;
+  sidebarVisible: boolean;
+  isStreaming: boolean;
+};
+
+const TopBar: React.FC<TopBarProps> = ({
+   
+  onNewConvo,
+  onDeleteConvo,
+  toggleSidebar,
+  sidebarVisible,
+  isStreaming,
+}) => {
+  const isAuthed = !!Cookies.get("homemind_token");
+  const username = localStorage.getItem("username") || "Guest";
+  const [authMenuOpen, setAuthMenuOpen] = useState(false);
+  const [navMenuOpen, setNavMenuOpen] = useState(false);
+
+  const handleAuthIconClick = () => {
+    setNavMenuOpen(false);
+    setAuthMenuOpen((prev: boolean) => !prev);
+  };
+
+  const navLinks = [
+    { href: "/charts", label: "Charts", Icon: BarChart3 },
+    { href: "/insights", label: "Insights", Icon: GitBranch },
+    { href: "/analyzer", label: "Deal Analyzer", Icon: Calculator },
+    { href: "/map", label: "Map", Icon: MapPin },
+    { href: "/forums", label: "Forums", Icon: Users },
+  ];
+
+  return (
+    <div className="sticky top-0 z-20 flex items-center justify-between p-4 border-b border-border bg-background h-16 overflow-visible gap-2">
+      <div className="flex items-center gap-2 min-w-0 flex-1">
+        {!sidebarVisible && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={toggleSidebar}
+                className="p-2 cursor-pointer hover:bg-muted rounded duration-200"
+                aria-label="Toggle Sidebar"
+                title="Toggle Sidebar"
+              >
+                <Menu className="w-6 h-6" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Open sidebar</TooltipContent>
+          </Tooltip>
+        )}
+        <span className="hidden md:inline text-xl font-bold select-none text-foreground">
+          Hi {username}, welcome to HomeMind! ðŸ 
+        </span>
+      </div>
+      <div className="flex items-center gap-3">
+        <div className="hidden min-[1065px]:flex items-center gap-4">
+          {navLinks.map(({ href, label, Icon }) => (
+            <Tooltip key={href}>
+              <TooltipTrigger asChild>
+                <Link
+                  href={href}
+                  className="inline-flex h-8 w-8 items-center justify-center hover:text-primary transition-colors"
+                  aria-label={label}
+                >
+                  <Icon className="w-5 h-5" />
+                </Link>
+              </TooltipTrigger>
+              <TooltipContent>{label}</TooltipContent>
+            </Tooltip>
+          ))}
+        </div>
+        <div className="min-[1065px]:hidden relative">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                className="inline-flex h-8 w-8 items-center justify-center hover:text-primary transition-colors cursor-pointer"
+                aria-label="Open navigation menu"
+                onClick={() => {
+                  setAuthMenuOpen(false);
+                  setNavMenuOpen((prev: boolean) => !prev);
+                }}
+              >
+                <Settings className="w-5 h-5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Menu</TooltipContent>
+          </Tooltip>
+          {navMenuOpen && (
+            <div className="absolute right-0 mt-2 w-40 bg-card rounded shadow-lg py-2 z-50">
+              {navLinks.map(({ href, label, Icon }) => (
+                <Link href={href} key={href} onClick={() => setNavMenuOpen(false)}>
+                  <div className="px-4 py-2 hover:bg-muted cursor-pointer select-none flex items-center gap-2">
+                    <Icon className="w-4 h-4" />
+                    <span>{label}</span>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span>
+              <DarkModeToggle />
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>Toggle theme</TooltipContent>
+        </Tooltip>
+        {isAuthed ? (
+          <>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => {
+                    if (isStreaming) {
+                      toast.error(
+                        "Please wait for the current response to complete before starting a new conversation",
+                      );
+                      return;
+                    }
+                    globalThis.location.reload();
+                  }}
+                  disabled={isStreaming}
+                  className={`inline-flex h-8 w-8 items-center justify-center transition-colors ${
+                    isStreaming
+                      ? "cursor-not-allowed opacity-60"
+                      : "hover:text-primary cursor-pointer"
+                  }`}
+                  aria-label="New Conversation"
+                  title="New Conversation"
+                >
+                  <PlusCircle className="w-5 h-5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>New conversation</TooltipContent>
+            </Tooltip>
+            <div className="relative">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={handleAuthIconClick}
+                    className="inline-flex h-8 w-8 items-center justify-center hover:text-primary transition-colors cursor-pointer"
+                    aria-label="User Menu"
+                    title="User Menu"
+                  >
+                    <UserIcon className="w-5 h-5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>Account</TooltipContent>
+              </Tooltip>
+              {authMenuOpen && (
+                <div className="absolute right-0 mt-2 w-40 bg-card rounded shadow-lg py-2 z-50">
+                  <Link href="/profile" onClick={() => setAuthMenuOpen(false)}>
+                    <div
+                      className="px-4 py-2 hover:bg-muted cursor-pointer select-none"
+                      title="Profile"
+                      aria-label="Profile"
+                    >
+                      Profile
+                    </div>
+                  </Link>
+                  <button
+                    type="button"
+                    className="px-4 py-2 hover:bg-muted cursor-pointer select-none text-red-600 w-full text-left"
+                    onClick={() => {
+                      setAuthMenuOpen(false);
+                      document.cookie =
+                        "homemind_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+                      toast.success("Logged out successfully");
+                      globalThis.location.reload();
+                    }}
+                    onKeyDown={(e: React.KeyboardEvent) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        setAuthMenuOpen(false);
+                        document.cookie =
+                          "homemind_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+                        toast.success("Logged out successfully");
+                        globalThis.location.reload();
+                      }
+                    }}
+                    title="Log Out"
+                    aria-label="Log Out"
+                  >
+                    Log Out
+                  </button>
+                </div>
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => {
+                    if (isStreaming) {
+                      toast.error(
+                        "Please wait for the current response to complete before starting a new conversation",
+                      );
+                      return;
+                    }
+                    onNewConvo();
+                  }}
+                  disabled={isStreaming}
+                  className={`inline-flex h-8 w-8 items-center justify-center transition-colors ${
+                    isStreaming
+                      ? "cursor-not-allowed opacity-60"
+                      : "hover:text-primary cursor-pointer"
+                  }`}
+                  aria-label="New Conversation"
+                  title="New Conversation"
+                >
+                  <PlusCircle className="w-5 h-5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>New conversation</TooltipContent>
+            </Tooltip>
+            <div className="relative">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={handleAuthIconClick}
+                    className="inline-flex h-8 w-8 items-center justify-center hover:text-primary transition-colors cursor-pointer"
+                    aria-label="User Menu"
+                    title="User Menu"
+                  >
+                    <UserIcon className="w-5 h-5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>Account</TooltipContent>
+              </Tooltip>
+              {authMenuOpen && (
+                <div className="absolute right-0 mt-2 w-40 bg-card rounded shadow-lg py-2 z-50">
+                  <Link href="/login" onClick={() => setAuthMenuOpen(false)}>
+                    <div
+                      className="px-4 py-2 hover:bg-muted cursor-pointer select-none"
+                      title="Log In"
+                      aria-label="Log In"
+                    >
+                      Log In
+                    </div>
+                  </Link>
+                  <Link href="/signup" onClick={() => setAuthMenuOpen(false)}>
+                    <div
+                      className="px-4 py-2 hover:bg-muted cursor-pointer select-none"
+                      title="Sign Up"
+                      aria-label="Sign Up"
+                    >
+                      Sign Up
+                    </div>
+                  </Link>
+                </div>
+              )}
+            </div>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => {
+                    if (onDeleteConvo) {
+                      onDeleteConvo();
+                      return;
+                    }
+                    localStorage.removeItem(LOCAL_CHAT_KEY);
+                    toast.success("Conversation deleted successfully");
+                    globalThis.location.reload();
+                  }}
+                  className="inline-flex h-8 w-8 items-center justify-center hover:text-red-600 transition-colors cursor-pointer"
+                  aria-label="Delete Conversation"
+                  title="Delete Conversation"
+                >
+                  <Trash2 className="w-5 h-5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Delete conversation</TooltipContent>
+            </Tooltip>
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ----------------------------------------------------------
+// Sidebar Component
+// ----------------------------------------------------------
+type SidebarProps = {
+  conversationLoading: boolean;
+  conversations: GuestConversation[];
+  onSelect: (conv: GuestConversation) => void;
+  isAuthed: boolean;
+  refreshConvos: () => void;
+  sidebarVisible: boolean;
+  toggleSidebar: () => void;
+  selectedConvoId: string | null;
+  namingInProgress: Set<string>;
+  loadingConversations: Set<string>;
+  isStreaming: boolean;
+};
+
+const Sidebar: React.FC<SidebarProps> = ({
+  conversationLoading,
+  conversations,
+  onSelect,
+  isAuthed,
+  refreshConvos,
+  sidebarVisible,
+  toggleSidebar,
+  selectedConvoId,
+  namingInProgress,
+  loadingConversations,
+  isStreaming,
+}) => {
+  const [showSearchInput, setShowSearchInput] = useState(false);
+  const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
+
+  /* -----------------------------------------------------------------
+   * Highlighting + auto-scroll logic
+   * ----------------------------------------------------------------- */
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const itemRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
+  const prevConvoIdsRef = useRef<string[]>([]);
+
+  useEffect(() => {
+    // Detect newlyâ€‘added conversation ids
+    const prevIds = prevConvoIdsRef.current;
+    const currentIds = conversations.map((c) => c._id);
+    const newIds = currentIds.filter((id) => !prevIds.includes(id));
+
+    if (newIds.length > 0) {
+      const newId = newIds[0];
+      setHighlightId(newId);
+
+      setTimeout(() => {
+        const el = itemRefs.current[newId];
+        el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 100);
+
+      setTimeout(() => setHighlightId(null), 0);
+    }
+
+    // Update the ref for the next run
+    prevConvoIdsRef.current = currentIds;
+  }, [conversations]);
+
+  useEffect(() => {
+    const updateWidth = () =>
+      setIsMobile(globalThis.window.innerWidth < 768);
+    updateWidth();
+    globalThis.window.addEventListener("resize", updateWidth);
+    return () =>
+      globalThis.window.removeEventListener("resize", updateWidth);
+  }, []);
+
+  useEffect(() => {
+    if (!showSearchInput) return;
+    const timer = globalThis.window.setTimeout(() => {
+      searchInputRef.current?.focus();
+    }, 0);
+    return () => globalThis.window.clearTimeout(timer);
+  }, [showSearchInput]);
+
+  useEffect(() => {
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(() => {
+      setDebouncedQuery(query.trim());
+    }, 200);
+    return () => {
+      if (searchDebounceRef.current) {
+        clearTimeout(searchDebounceRef.current);
+      }
+    };
+  }, [query]);
+
+  const toggleSearchInput = () => {
+    setShowSearchInput((prev: boolean) => {
+      const next = !prev;
+      if (prev) {
+        setQuery("");
+        setDebouncedQuery("");
+      }
+      return next;
+    });
+  };
+
+  const filteredConversations = useMemo(() => {
+    const normalized = debouncedQuery.toLowerCase();
+    if (!normalized) return conversations;
+    return conversations.filter((conv: GuestConversation) =>
+      String(conv.title || "")
+        .toLowerCase()
+        .includes(normalized),
+    );
+  }, [conversations, debouncedQuery]);
+
+  const activeRenameConvo = useMemo(
+    () =>
+      conversations.find((conv: GuestConversation) => conv._id === renamingId) ??
+      null,
+    [conversations, renamingId],
+  );
+  const renameInitialTitle = activeRenameConvo?.title ?? "";
+
+  const isFiltering = debouncedQuery.trim().length > 0;
+  const searchActive = showSearchInput || isFiltering;
+  const enableRowAnimations = isAuthed && !searchActive;
+  const enableLayout = !searchActive;
+  const noMatches =
+    conversations.length > 0 &&
+    isFiltering &&
+    filteredConversations.length === 0;
+
+  const handleRename = async (
+    convId: string,
+    nextTitle: string,
+  ): Promise<boolean> => {
+    try {
+      if (!isAuthed) {
+        if (!nextTitle.trim()) return false;
+        const local = loadGuestConvos();
+        const next = local.map((conv: GuestConversation) =>
+          conv._id === convId ? { ...conv, title: nextTitle } : conv,
+        );
+        persistGuestConvos(next);
+        toast.success("Conversation renamed");
+        refreshConvos();
+        return true;
+      }
+      const token = Cookies.get("homemind_token");
+      const res = await fetch(`${API_BASE_URL}/api/conversations/${convId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ title: nextTitle }),
+      });
+      if (res.ok) {
+        toast.success("Conversation renamed");
+        refreshConvos();
+        return true;
+      } else {
+        toast.error("Failed to rename conversation");
+        return false;
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error("Error renaming conversation");
+      return false;
+    }
+  };
+
+  const handleGenerateName = async (convId: string) => {
+    if (!isAuthed) {
+      const target = conversations.find(
+        (conv: GuestConversation) => conv._id === convId,
+      );
+      const seed = getGuestTitleSeed(target?.messages ?? []);
+      if (!seed) {
+        throw new Error("Add a message first");
+      }
+      const res = await fetch(`${API_BASE_URL}/api/chat/generate-title`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ message: seed }),
+      });
+      if (!res.ok) {
+        throw new Error("Failed to generate name");
+      }
+      const data = await res.json();
+      return data.suggestedName as string;
+    }
+    const token = Cookies.get("homemind_token");
+    const res = await fetch(
+      `${API_BASE_URL}/api/conversations/${convId}/generate-name`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    );
+    if (!res.ok) {
+      throw new Error("Failed to generate name");
+    }
+    const data = await res.json();
+    return data.suggestedName as string;
+  };
+
+  const handleDelete = async () => {
+    if (!deleteId) return;
+    try {
+      if (!isAuthed) {
+        const local = loadGuestConvos();
+        const next = local.filter(
+          (conv: GuestConversation) => conv._id !== deleteId,
+        );
+        persistGuestConvos(next);
+        if (selectedConvoId === deleteId) {
+          localStorage.setItem(
+            LOCAL_CHAT_KEY,
+            JSON.stringify(next[0]?.messages ?? []),
+          );
+        }
+        toast.success("Conversation deleted");
+        refreshConvos();
+        return;
+      }
+      const token = Cookies.get("homemind_token");
+      const res = await fetch(`${API_BASE_URL}/api/conversations/${deleteId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        toast.success("Conversation deleted");
+        refreshConvos();
+      } else {
+        toast.error("Failed to delete conversation");
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error("Error deleting conversation");
+    } finally {
+      setDeleteId(null);
+    }
+  };
+
+  if (isMobile) {
+    return (
+      <>
+        <AnimatePresence>
+          {sidebarVisible && (
+            <motion.aside
+              className="bg-sidebar text-sidebar-foreground p-4 flex flex-col overflow-hidden h-screen shadow-[4px_0px_10px_rgba(0,0,0,0.1)] fixed inset-0 z-40"
+              initial={{ opacity: 0.5, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-bold select-none">Conversations</h2>
+                <div className="flex items-center gap-2">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={toggleSearchInput}
+                        className="p-1 cursor-pointer rounded hover:bg-muted"
+                        title="Search Conversations"
+                        aria-label="Search Conversations"
+                        aria-pressed={showSearchInput}
+                      >
+                        <Search className="w-5 h-5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {showSearchInput
+                        ? "Close search"
+                        : "Search conversations"}
+                    </TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={toggleSidebar}
+                        className="p-1 cursor-pointer hover:bg-muted rounded"
+                        title="Close Sidebar"
+                        aria-label="Close Sidebar"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>Close sidebar</TooltipContent>
+                  </Tooltip>
+                </div>
+              </div>
+              {showSearchInput && (
+                <div className="mb-3">
+                  <Input
+                    ref={searchInputRef}
+                    placeholder="Search conversations..."
+                    value={query}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                      setQuery(e.target.value)
+                    }
+                    className="cursor-text bg-background text-foreground border-input"
+                    aria-label="Search conversations"
+                  />
+                </div>
+              )}
+              <div className="flex-1 overflow-y-auto">
+                {(() => {
+                  if (conversationLoading) {
+                    return (
+                      <div className="space-y-2 p-2">
+                        {[1, 2, 3, 4, 5].map((i) => (
+                          <div
+                            key={i}
+                            className="h-12 rounded-lg bg-muted animate-pulse"
+                          />
+                        ))}
+                      </div>
+                    );
+                  }
+                  if (conversations.length === 0) {
+                    const EmptyIcon = isAuthed ? Inbox : LogIn;
+                    const emptyLabel = isAuthed ? "No conversations" : "No conversations yet";
+                    return (
+                      <div className="min-h-full flex flex-col items-center justify-center space-y-2">
+                        <EmptyIcon className="w-8 h-8 text-muted-foreground" />
+                        <p className="text-center text-sm text-muted-foreground">
+                          {emptyLabel}
+                        </p>
+                      </div>
+                    );
+                  }
+                  if (noMatches) {
+                    return (
+                      <div className="min-h-full flex items-center justify-center">
+                        <p className="text-center text-sm text-muted-foreground">
+                          No matches found
+                        </p>
+                      </div>
+                    );
+                  }
+                  return (
+                    <motion.div
+                      layout={enableLayout}
+                      className="space-y-2"
+                      initial={false}
+                      animate={false}
+                    >
+                      {filteredConversations.map((conv, index) => (
+                        <ConversationRow
+                          key={conv._id}
+                          conv={conv}
+                          index={index}
+                          selectedConvoId={selectedConvoId}
+                          namingInProgress={namingInProgress}
+                          loadingConversations={loadingConversations}
+                          highlightId={highlightId}
+                          isStreaming={isStreaming}
+                          enableRowAnimations={enableRowAnimations}
+                          enableLayout={enableLayout}
+                          itemRefs={itemRefs}
+                          onSelect={onSelect}
+                          setRenamingId={setRenamingId}
+                          setDeleteId={setDeleteId}
+                          isMobile={isMobile}
+                          toggleSidebar={toggleSidebar}
+                        />
+                      ))}
+                    </motion.div>
+                  );
+                })()}
+              </div>
+            </motion.aside>
+          )}
+        </AnimatePresence>
+        {deleteId && (
+          <DeleteConfirmationDialog
+            open={true}
+            onConfirm={handleDelete}
+            onCancel={() => setDeleteId(null)}
+          />
+        )}
+        <RenameConversationDialog
+          open={!!activeRenameConvo}
+          initialTitle={renameInitialTitle}
+          onClose={() => setRenamingId(null)}
+          onSave={async (title: string) => {
+            if (!activeRenameConvo?._id) return false;
+            return handleRename(activeRenameConvo._id, title);
+          }}
+          onGenerate={async () => {
+            if (!activeRenameConvo?._id) return renameInitialTitle;
+            return handleGenerateName(activeRenameConvo._id);
+          }}
+        />
+      </>
+    );
+  }
+
+  return (
+    <div className="shadow-lg">
+      <motion.aside
+        className="bg-sidebar text-sidebar-foreground flex flex-col p-4 h-screen shadow-lg"
+        variants={desktopSidebarVariants}
+        animate={sidebarVisible ? "visible" : "hidden"}
+        initial="visible"
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-bold select-none">Conversations</h2>
+          <div className="flex items-center gap-2">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={toggleSearchInput}
+                  className="p-1 cursor-pointer rounded hover:bg-muted"
+                  title="Search Conversations"
+                  aria-label="Search Conversations"
+                  aria-pressed={showSearchInput}
+                >
+                  <Search className="w-5 h-5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {showSearchInput ? "Close search" : "Search conversations"}
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={toggleSidebar}
+                  className="p-1 cursor-pointer hover:bg-muted rounded"
+                  title="Close Sidebar"
+                  aria-label="Close Sidebar"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Close sidebar</TooltipContent>
+            </Tooltip>
+          </div>
+        </div>
+        {showSearchInput && (
+          <div className="mb-3">
+            <Input
+              ref={searchInputRef}
+              placeholder="Search conversations..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="cursor-text bg-background text-foreground border-input"
+              aria-label="Search conversations"
+            />
+          </div>
+        )}
+        <div className="flex-1 overflow-y-auto">
+          {(() => {
+            if (conversationLoading) {
+              return (
+                <div className="space-y-2 p-2">
+                  {[1, 2, 3, 4, 5].map((i) => (
+                    <div
+                      key={i}
+                      className="h-12 rounded-lg bg-muted animate-pulse"
+                    />
+                  ))}
+                </div>
+              );
+            }
+            if (conversations.length === 0) {
+              const EmptyIcon = isAuthed ? Inbox : LogIn;
+              const emptyLabel = isAuthed ? "No conversations" : "No conversations yet";
+              return (
+                <div className="min-h-full flex flex-col items-center justify-center space-y-2">
+                  <EmptyIcon className="w-8 h-8 text-muted-foreground" />
+                  <p className="text-center text-sm text-muted-foreground">
+                    {emptyLabel}
+                  </p>
+                </div>
+              );
+            }
+            if (noMatches) {
+              return (
+                <div className="min-h-full flex items-center justify-center">
+                  <p className="text-center text-sm text-muted-foreground">
+                    No matches found
+                  </p>
+                </div>
+              );
+            }
+            return (
+              <motion.div
+                layout={enableLayout}
+                className="space-y-2"
+                initial={false}
+                animate={false}
+              >
+                {filteredConversations.map((conv, index) => (
+                  <ConversationRow
+                    key={conv._id}
+                    conv={conv}
+                    index={index}
+                    selectedConvoId={selectedConvoId}
+                    namingInProgress={namingInProgress}
+                    loadingConversations={loadingConversations}
+                    highlightId={highlightId}
+                    isStreaming={isStreaming}
+                    enableRowAnimations={enableRowAnimations}
+                    enableLayout={enableLayout}
+                    itemRefs={itemRefs}
+                    onSelect={onSelect}
+                    setRenamingId={setRenamingId}
+                    setDeleteId={setDeleteId}
+                    isMobile={isMobile}
+                    toggleSidebar={toggleSidebar}
+                  />
+                ))}
+              </motion.div>
+            );
+          })()}
+        </div>
+        {deleteId && (
+          <DeleteConfirmationDialog
+            open={true}
+            onConfirm={handleDelete}
+            onCancel={() => setDeleteId(null)}
+          />
+        )}
+      </motion.aside>
+      <RenameConversationDialog
+        open={!!activeRenameConvo}
+        initialTitle={renameInitialTitle}
+        onClose={() => setRenamingId(null)}
+        onSave={async (title: string) => {
+            if (!activeRenameConvo?._id) return false;
+            return handleRename(activeRenameConvo._id, title);
+          }}
+        onGenerate={async () => {
+          if (!activeRenameConvo?._id) return renameInitialTitle;
+          return handleGenerateName(activeRenameConvo._id);
+        }}
+      />
+    </div>
+  );
+};
+
+// ----------------------------------------------------------
+// Delete Confirmation Dialog using Shadcn Dialog Components
+// ----------------------------------------------------------
+const DeleteConfirmationDialog: React.FC<{
+  open: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}> = ({ open, onConfirm, onCancel }) => {
+  return (
+    <Dialog open={open} onOpenChange={onCancel}>
+      <DialogContent className="[&>button]:hidden border-none">
+        <DialogClose asChild>
+          <button
+            aria-label="Close"
+            title="Close"
+            className="absolute top-3 right-3 text-foreground hover:opacity-80"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </DialogClose>
+
+        <DialogHeader>
+          <DialogTitle>
+            <span className="text-foreground">Confirm Delete</span>
+          </DialogTitle>
+          <DialogDescription>
+            Are you sure you want to delete this conversation?
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            className="cursor-pointer text-foreground"
+            onClick={onCancel}
+            aria-label="Cancel Delete"
+            title="Cancel Delete"
+          >
+            Cancel
+          </Button>
+          <Button
+            className="cursor-pointer"
+            onClick={onConfirm}
+            aria-label="Confirm Delete"
+            title="Confirm Delete"
+          >
+            Delete
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+type RenameConversationDialogProps = {
+  open: boolean;
+  initialTitle: string;
+  onClose: () => void;
+  onSave: (title: string) => Promise<boolean>;
+  onGenerate: () => Promise<string>;
+};
+
+const RenameConversationDialog: React.FC<RenameConversationDialogProps> = ({
+  open,
+  initialTitle,
+  onClose,
+  onSave,
+  onGenerate,
+}) => {
+  const [draftTitle, setDraftTitle] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setDraftTitle(initialTitle ?? "");
+  }, [open, initialTitle]);
+
+  const handleGenerate = async () => {
+    setIsGenerating(true);
+    try {
+      const suggested = await onGenerate();
+      setDraftTitle(suggested);
+      toast.success("Suggested name generated");
+    } catch (error) {
+      console.error(error);
+      toast.error("Error generating name");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleSave = async () => {
+    const trimmed = draftTitle.trim();
+    if (!trimmed) return;
+    const ok = await onSave(trimmed);
+    if (ok) onClose();
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next: boolean) => {
+        if (!next) onClose();
+      }}
+    >
+      <DialogContent className="[&>button]:hidden border bg-card text-card-foreground">
+        <DialogClose asChild>
+          <button
+            aria-label="Close"
+            title="Close"
+            className="absolute top-3 right-3 text-card-foreground hover:opacity-80"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </DialogClose>
+
+        <DialogHeader>
+          <DialogTitle className="text-card-foreground">
+            Rename Conversation
+          </DialogTitle>
+          <DialogDescription className="text-muted-foreground">
+            Enter a new name for your conversation or generate a suggestion.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <Input
+            value={draftTitle}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+              setDraftTitle(e.target.value)
+            }
+            onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                handleSave();
+              }
+            }}
+            placeholder="Enter conversation name"
+            autoFocus
+            className="cursor-text bg-background text-foreground border-input"
+          />
+          <Button
+            variant="outline"
+            className="w-full cursor-pointer bg-background hover:bg-muted text-foreground border-input"
+            onClick={handleGenerate}
+            disabled={isGenerating}
+          >
+            {isGenerating ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Generating...
+              </>
+            ) : (
+              <>
+                <Zap className="w-4 h-4" />
+                Generate Suggested Name
+              </>
+            )}
+          </Button>
+        </div>
+
+        <DialogFooter>
+          <Button
+            variant="outline"
+            className="cursor-pointer bg-background hover:bg-muted text-foreground border-input"
+            onClick={onClose}
+            aria-label="Cancel Rename"
+            title="Cancel Rename"
+          >
+            Cancel
+          </Button>
+          <Button
+            className="cursor-pointer bg-primary hover:bg-primary/90 text-primary-foreground"
+            onClick={handleSave}
+            aria-label="Save Rename"
+            title="Save Rename"
+            disabled={!draftTitle.trim()}
+          >
+            Save
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+type LoadingPhase = {
+  text: string;
+  Icon: React.ComponentType<{ className?: string }>;
+  spin: boolean;
+};
+
+type MessageBubbleProps = {
+  msg: ChatMessage;
+  idx: number;
+  isLast: boolean;
+  ratings: Record<number, "up" | "down">;
+  loading: boolean;
+  latestMessageRef: React.RefObject<HTMLDivElement | null>;
+  loadingPhases: LoadingPhase[];
+  phaseIdx: number;
+  rateConversation: (vote: "up" | "down", idx: number) => void;
+};
+
+const MessageBubble: React.FC<MessageBubbleProps> = ({
+  msg,
+  idx,
+  isLast,
+  ratings,
+  loading,
+  latestMessageRef,
+  loadingPhases,
+  phaseIdx,
+  rateConversation,
+}) => {
+  const [view, setView] = useState<string>("Combined");
+  const [pickerOpen, setPickerOpen] = useState<boolean>(false);
+  const pickerRef = useRef<HTMLDivElement>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (pickerOpen && pickerRef.current) {
+      pickerRef.current.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+      });
+    }
+  }, [pickerOpen]);
+
+  const displayedText =
+    view === "Combined" || !msg?.expertViews
+      ? (msg?.text ?? "")
+      : (msg?.expertViews[view] ?? "");
+
+  const text =
+    view === "Combined" || !msg?.expertViews
+      ? msg?.text
+      : msg?.expertViews[view];
+
+  const zpidsFromText = useMemo(() => {
+    const re = /https?:\/\/www\.zillow\.com\/homedetails\/(\d+)_zpid\//g;
+    const out: string[] = [];
+    let m: RegExpExecArray | null;
+    const src = (displayedText || "").toString();
+    while ((m = re.exec(src)) !== null) {
+      const z = m[1];
+      if (z && !out.includes(z)) out.push(z);
+    }
+    return out;
+  }, [displayedText]);
+
+  if (!msg) return null;
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(displayedText);
+      setCopied(true);
+      toast.success("Copied to clipboard");
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error("Clipboard write failed", err);
+      toast.error("Failed to copy");
+    }
+  };
+
+  const upColor =
+    ratings[idx] === "up" ? "text-green-600" : "hover:text-green-600";
+  const downColor =
+    ratings[idx] === "down" ? "text-red-600" : "hover:text-red-600";
+  const isStreaming = isLast && msg.role === "model" && loading && !msg.text;
+
+  return (
+    <motion.div
+      ref={
+        isLast ? (latestMessageRef as React.Ref<HTMLDivElement>) : undefined
+      }
+      variants={bubbleVariants}
+      animate="visible"
+      exit={{ opacity: 0, y: -10 }}
+      className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"} mb-2`}
+    >
+      <div
+        className={`rounded-lg p-2 pb-0 shadow-lg hover:shadow-xl transition-shadow duration-300 ${
+          msg.role === "user"
+            ? "bg-primary text-primary-foreground"
+            : "bg-muted"
+        } max-w-xs sm:max-w-sm md:max-w-md lg:max-w-lg`}
+      >
+        {isStreaming ? (
+          <div className="flex items-center gap-2 p-2 animate-pulse">
+            {(() => {
+              const { Icon, spin } = loadingPhases[phaseIdx];
+              return spin ? (
+                <Icon className="w-5 h-5 animate-spin" />
+              ) : (
+                <Icon className="w-5 h-5" />
+              );
+            })()}
+            <span className="font-medium">
+              {loadingPhases[phaseIdx].text}
+              <AnimatedDots resetKey={phaseIdx} />
+            </span>
+          </div>
+        ) : (
+          <ReactMarkdown
+            remarkPlugins={[
+              remarkGfm,
+              [remarkMath, { singleDollarTextMath: false }],
+            ]}
+            rehypePlugins={[rehypeKatex]}
+            components={markdownComponents}
+          >
+            {text.replaceAll(String.raw`\_`, "_")}
+          </ReactMarkdown>
+        )}
+        {msg.role === "model" && (
+          <div className="flex items-center justify-between mt-2 mb-1">
+            <div className="flex items-center gap-2">
+              {zpidsFromText.length > 0 && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      asChild
+                      variant="outline"
+                      size="sm"
+                      className="rounded-full shadow-sm"
+                      aria-label={`View ${zpidsFromText.length} properties on map`}
+                      title="View all on map"
+                    >
+                      <Link
+                        href={`/map?zpids=${encodeURIComponent(zpidsFromText.join(","))}`}
+                      >
+                        <MapPin className="w-4 h-4" />
+                        <span className="ml-1">
+                          Map {zpidsFromText.length}
+                        </span>
+                      </Link>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>View all on map</TooltipContent>
+                </Tooltip>
+              )}
+              <div className="relative text-xs">
+                {msg.expertViews ? (
+                  <>
+                    <button
+                      onClick={() => setPickerOpen((prev: boolean) => !prev)}
+                      className="flex items-center gap-1 px-2 py-1 border border-border rounded-md bg-muted hover:bg-muted/50 cursor-pointer"
+                      title="Select Expert View"
+                      aria-label="Select Expert View"
+                    >
+                      {view === "Combined" ? "Combined (Default)" : view}{" "}
+                      <ChevronDown className="w-3 h-3" />
+                    </button>
+                    <AnimatePresence>
+                      {pickerOpen && (
+                        <motion.div
+                          ref={pickerRef}
+                          initial={{ opacity: 0, scale: 0.95 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.95 }}
+                          transition={{ duration: 0.15 }}
+                          className="absolute left-0 mt-1 min-w-max bg-card border border-border divide-y divide-border rounded-md shadow-md z-50"
+                        >
+                          {["Combined", ...Object.keys(msg.expertViews)].map(
+                            (opt) => (
+                              <button
+                                key={opt}
+                                type="button"
+                                onClick={() => {
+                                  setView(opt);
+                                  setPickerOpen(false);
+                                }}
+                                className={`w-full text-left px-3 py-2 cursor-pointer whitespace-nowrap ${
+                                  view === opt
+                                    ? "bg-primary/10 text-foreground"
+                                    : "hover:bg-muted"
+                                }`}
+                              >
+                                {opt === "Combined"
+                                  ? "Combined (Default)"
+                                  : opt}
+                              </button>
+                            ),
+                          )}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </>
+                ) : (
+                  <div className="px-2 py-1 border border-border rounded-md bg-muted text-foreground">
+                    Combined (Default)
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex gap-1">
+              <button
+                onClick={handleCopy}
+                className="p-1 cursor-pointer hover:text-primary"
+                title="Copy message"
+                aria-label="Copy message"
+              >
+                {copied ? (
+                  <Check className="w-4 h-4 text-green-500" />
+                ) : (
+                  <Copy className="w-4 h-4" />
+                )}
+              </button>
+              <button
+                onClick={() => rateConversation("up", idx)}
+                className={`p-1 cursor-pointer ${upColor}`}
+                title="Like the response? Click to let us know!"
+                aria-label="Thumbs up"
+              >
+                <ThumbsUp className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => rateConversation("down", idx)}
+                className={`p-1 cursor-pointer ${downColor}`}
+                title="Not satisfied? Click to let us know!"
+                aria-label="Thumbs down"
+              >
+                <ThumbsDown className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </motion.div>
+  );
+};
+
+type ChatWindowProps = {
+  isAuthed: boolean;
+  localConvos: GuestConversation[];
+  setLocalConvos: Dispatch<SetStateAction<GuestConversation[]>>;
+  selectedConvoId: string | null;
+  onSetSelectedConvo: (conv: GuestConversation) => void;
+  namingInProgress: Set<string>;
+  setNamingInProgress: Dispatch<SetStateAction<Set<string>>>;
+  loadingConversations: Set<string>;
+  setLoadingConversations: Dispatch<SetStateAction<Set<string>>>;
+};
+
+const ChatWindow: React.FC<ChatWindowProps> = ({
+  isAuthed,
+  localConvos,
+  setLocalConvos,
+  selectedConvoId,
+  onSetSelectedConvo,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  namingInProgress,
+  setNamingInProgress,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  loadingConversations,
+  setLoadingConversations,
+}) => {
+  const [messages, setMessages] = useState<ChatMessage[]>(
+    Cookies.get("homemind_token") ? [] : getInitialMessages(),
+  );
+  const [userInput, setUserInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [convLoading, setConvLoading] = useState(false);
+  const latestMessageRef = useRef<HTMLDivElement>(null);
+  const prevConvoId = useRef<string | null>(null);
+  const shouldAutoScroll = useRef(true);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const [inputHistory, setInputHistory] = useState<string[]>(() => {
+    try {
+      return JSON.parse(sessionStorage.getItem("inputHistory") || "[]");
+    } catch {
+      return [];
+    }
+  });
+  const [historyIndex, setHistoryIndex] = useState(inputHistory.length);
+  const [draftInput, setDraftInput] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const lastGuestConvoIdRef = useRef<string | null>(selectedConvoId);
+  const skipGuestUpsertRef = useRef(false);
+
+  const showEmptyState = messages.length === 0 && !loading && !convLoading;
+
+  const createGuestConversation = (seedMessages: ChatMessage[] = []) => {
+    const convo = buildGuestConversation(seedMessages);
+    setLocalConvos((prev: GuestConversation[]) => {
+      const next = [convo, ...prev];
+      persistGuestConvos(next);
+      return next;
+    });
+    onSetSelectedConvo(convo);
+    prevConvoId.current = convo._id;
+    localStorage.setItem(LOCAL_CHAT_KEY, JSON.stringify(seedMessages));
+    return convo;
+  };
+
+  const upsertGuestConversation = (nextMessages: ChatMessage[]) => {
+    if (!selectedConvoId) return;
+    setLocalConvos((prev: GuestConversation[]) => {
+      const index = prev.findIndex(
+        (conv: GuestConversation) => conv._id === selectedConvoId,
+      );
+      const now = new Date().toISOString();
+      const base = index >= 0 ? prev[index] : { _id: selectedConvoId };
+      const baseTitle =
+        "title" in base && typeof base.title === "string"
+          ? base.title
+          : "New Conversation";
+      const title = deriveGuestTitle(nextMessages, baseTitle);
+      const updated = {
+        ...base,
+        title,
+        messages: nextMessages,
+        updatedAt: now,
+        createdAt:
+          "createdAt" in base && base.createdAt ? base.createdAt : now,
+      } as GuestConversation;
+      const next =
+        index >= 0
+          ? [
+              updated,
+              ...prev.filter(
+                (_: GuestConversation, idx: number) => idx !== index,
+              ),
+            ]
+          : [updated, ...prev];
+      persistGuestConvos(next);
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    sessionStorage.setItem("inputHistory", JSON.stringify(inputHistory));
+  }, [inputHistory]);
+
+  /* guestâ€‘side adaptive weights */
+  const [guestWeights, setGuestWeights] = useState<Record<string, number>>(
+    () => {
+      if (globalThis.window === undefined) return {};
+      try {
+        const stored = JSON.parse(
+          localStorage.getItem("homemindGuestWeights") || "{}",
+        );
+        const KEYS = [
+          "Data Analyst",
+          "Lifestyle Concierge",
+          "Financial Advisor",
+          "Neighborhood Expert",
+          "Cluster Analyst",
+        ];
+        const ok =
+          KEYS.every((k) => typeof stored[k] === "number") &&
+          KEYS.filter((k) => k !== "Cluster Analyst").every(
+            (k) => stored[k] >= 0.1,
+          ) &&
+          stored["Cluster Analyst"] === 1;
+        return ok ? stored : {};
+      } catch {
+        return {};
+      }
+    },
+  );
+
+  /* per-message rating state */
+  const [ratings, setRatings] = useState<Record<number, "up" | "down">>({});
+
+  const marqueeRowOne = [
+    "Find a 3 bedroom in Chapel Hill under $750k within 15 minutes of UNC campus.",
+    "Compare Carrboro vs. Southern Village for walkability, trails, and coffee shops.",
+    "Show single-family homes near top-rated Chapel Hill-Carrboro elementary schools.",
+    "Map ranch-style homes in Durham near I-40 with big backyards for dogs.",
+    "Spot new construction around Chatham Park with easy commute to Chapel Hill.",
+    "Find condos near Franklin Street with parking and a quiet study-friendly vibe.",
+  ];
+
+  const marqueeRowTwo = [
+    "Plan an open house route this weekend around Meadowmont and Governors Club.",
+    "Estimate rental potential for a Franklin Street condo during the academic year.",
+    "Find townhomes in Hillsborough with EV charging and low HOA fees.",
+    "Compare Chapel Hill vs. Apex commute times to RTP during rush hour.",
+    "Locate homes within 10 minutes of Duke but still in Chapel Hill-Carrboro schools.",
+    "Show cul-de-sac homes in Chapel Hill with mature trees and half-acre lots.",
+  ];
+
+  // duplicate the prompt sets to enable seamless marquee loops
+  const marqueeRowOneLoop = [...marqueeRowOne, ...marqueeRowOne];
+  const marqueeRowTwoLoop = [...marqueeRowTwo, ...marqueeRowTwo];
+
+  const handlePrefillPrompt = (prompt: string) => {
+    setUserInput(prompt);
+    inputRef.current?.focus();
+  };
+
+  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (historyIndex === inputHistory.length) {
+        setDraftInput(userInput);
+      }
+      if (historyIndex > 0) {
+        const prevIdx = historyIndex - 1;
+        setUserInput(inputHistory[prevIdx]);
+        setHistoryIndex(prevIdx);
+      }
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (historyIndex < inputHistory.length) {
+        const nextIdx = historyIndex + 1;
+        setHistoryIndex(nextIdx);
+        if (nextIdx === inputHistory.length) {
+          setUserInput(draftInput);
+        } else {
+          setUserInput(inputHistory[nextIdx]);
+        }
+      }
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
+  /* ------------------------------------------------------------------ */
+  /* sync on conversation switch                                        */
+  /* ------------------------------------------------------------------ */
+  useEffect(() => {
+    if (selectedConvoId && prevConvoId.current !== selectedConvoId) {
+      setConvLoading(true);
+      const found = localConvos.find((c) => c._id === selectedConvoId);
+      setMessages(found?.messages ?? []);
+      prevConvoId.current = selectedConvoId;
+      if (!isAuthed) {
+        skipGuestUpsertRef.current = true;
+      }
+      setRatings({}); // clear ratings when switching convo
+      setTimeout(() => setConvLoading(false), 250);
+    }
+  }, [selectedConvoId, localConvos, isAuthed]);
+
+  /* auto-focus input when chat is ready (desktop only - avoids mobile keyboard) */
+  useEffect(() => {
+    if (!convLoading && !showEmptyState && globalThis.window !== undefined) {
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      if (!isMobile) {
+        const t = setTimeout(() => inputRef.current?.focus(), 100);
+        return () => clearTimeout(t);
+      }
+    }
+  }, [convLoading, showEmptyState, isAuthed]);
+
+  useEffect(() => {
+    if (!isAuthed && !selectedConvoId) {
+      setMessages([]);
+      prevConvoId.current = null;
+      setRatings({});
+    }
+  }, [isAuthed, selectedConvoId]);
+
+  const loadingPhases = [
+    { text: "Understanding Your Query", Icon: Search, spin: false },
+    { text: "Processing Your Request", Icon: Settings, spin: true },
+    { text: "Reasoning & Thinking", Icon: Cpu, spin: false },
+    { text: "Generating a Response", Icon: Zap, spin: false },
+  ];
+  const [phaseIdx, setPhaseIdx] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    if (loading) {
+      const rotate = (idx: number) => {
+        if (!active || idx >= loadingPhases.length - 1) return;
+        const delay = 800 + Math.random() * 700;
+        setTimeout(() => {
+          if (!active) return;
+          const next = idx + 1;
+          setPhaseIdx(next);
+          rotate(next);
+        }, delay);
+      };
+      rotate(phaseIdx);
+    } else {
+      setPhaseIdx(0);
+    }
+    return () => {
+      active = false;
+    };
+  }, [loading]); // eslint-disable-line react-hooks/exhaustive-deps -- phaseIdx rotation is intentional
+
+  /* persist guest history */
+  useEffect(() => {
+    if (!Cookies.get("homemind_token")) {
+      localStorage.setItem(LOCAL_CHAT_KEY, JSON.stringify(messages));
+      const hasTimeoutNote = messages.some((m: ChatMessage) => m?.text?.includes("âš ï¸"));
+      if (hasTimeoutNote) {
+        console.log(
+          "[Frontend-Guest] Saved messages with timeout note to localStorage",
+        );
+      }
+    }
+  }, [messages]);
+
+  useEffect(() => {
+    if (isAuthed || loading || convLoading) return;
+    if (!selectedConvoId) {
+      lastGuestConvoIdRef.current = null;
+      return;
+    }
+    if (lastGuestConvoIdRef.current !== selectedConvoId) {
+      lastGuestConvoIdRef.current = selectedConvoId;
+      return;
+    }
+    if (skipGuestUpsertRef.current) {
+      skipGuestUpsertRef.current = false;
+      return;
+    }
+    upsertGuestConversation(messages);
+  }, [isAuthed, loading, convLoading, messages, selectedConvoId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* smarter autoscroll - only scroll if user is at bottom */
+  useEffect(() => {
+    if (!shouldAutoScroll.current) return;
+    latestMessageRef.current?.scrollIntoView({
+      behavior: "instant",
+      block: "end",
+    });
+  }, [messages]);
+
+  /* scroll to bottom handler */
+  const scrollToBottom = () => {
+    latestMessageRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "end",
+    });
+    shouldAutoScroll.current = true;
+    setShowScrollToBottom(false);
+  };
+
+  /* track if user manually scrolled away from bottom */
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      const isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
+      shouldAutoScroll.current = isNearBottom;
+      setShowScrollToBottom(!isNearBottom && scrollHeight > clientHeight + 50);
+    };
+
+    container.addEventListener("scroll", handleScroll);
+    return () => container.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  /* ------------------------------------------------------------------ */
+  /* helpers                                                            */
+  /* ------------------------------------------------------------------ */
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const createNewConversation = async (): Promise<any> => {
+    const res = await fetch(`${API_BASE_URL}/api/conversations`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${Cookies.get("homemind_token")}`,
+      },
+      body: JSON.stringify({ title: "New Conversation" }),
+    });
+    if (!res.ok) throw new Error("Failed to create conversation");
+    const data = await res.json();
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore
+    setLocalConvos((p) => [data, ...p]);
+    onSetSelectedConvo(data);
+    prevConvoId.current = data._id;
+    return data;
+  };
+
+  /**
+   * Send message to the API and update the chat history with streaming support.
+   */
+  const handleStopGeneration = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+  };
+
+  const handleSend = async () => {
+    if (!userInput.trim() || loading) return;
+    abortControllerRef.current = new AbortController();
+    setLoading(true);
+    shouldAutoScroll.current = true; // Enable auto-scroll for new messages
+
+    const text = userInput;
+    setUserInput("");
+
+    const isFirstMessage = messages.length === 0;
+
+    let activeGuestConvoId = selectedConvoId;
+    if (!isAuthed && !activeGuestConvoId) {
+      const convo = createGuestConversation();
+      activeGuestConvoId = convo._id;
+    }
+
+    // Add user message immediately
+    setMessages((m: ChatMessage[]) => [
+      ...m,
+      { id: crypto.randomUUID(), role: "user", text },
+    ]);
+
+    // Track this conversation as loading immediately
+    const currentConvoId = isAuthed
+      ? selectedConvoId || "pending"
+      : activeGuestConvoId || "pending";
+    setLoadingConversations((prev: Set<string>) => {
+      const next = new Set(prev);
+      next.add(currentConvoId);
+      console.log("[LoadingConvo] Added to loading set:", currentConvoId);
+      return next;
+    });
+    setInputHistory((h: string[]) => {
+      const next = [...h, text];
+      setHistoryIndex(next.length);
+      return next;
+    });
+
+    // Add placeholder for streaming AI response
+    const streamingMessageIndex = messages.length + 1;
+    setMessages((m: ChatMessage[]) => [
+      ...m,
+      { id: crypto.randomUUID(), role: "model", text: "" },
+    ]);
+
+    let retryCount = 0;
+    const MAX_RETRIES = 3;
+    let streamedText = "";
+    let receivedExpertViews: Record<string, string> = {};
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let receivedWeights: any = null;
+    let receivedConvoId: string | null = null;
+    let hasTimedOut = false;
+
+    const attemptStream = async (): Promise<boolean> => { // NOSONAR
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const body: any = { message: text };
+        if (isAuthed) {
+          if (selectedConvoId) {
+            body.convoId = selectedConvoId;
+          } else {
+            const c = await createNewConversation();
+            body.convoId = c._id;
+            receivedConvoId = c._id;
+
+            // Update loading conversations with actual ID
+            setLoadingConversations((prev) => {
+              const next = new Set(prev);
+              next.delete("pending");
+              next.add(c._id);
+              console.log("[LoadingConvo] Updated to actual ID:", c._id);
+              return next;
+            });
+
+            // Start name generation tracking immediately for first message
+            if (isFirstMessage) {
+              console.log("[AutoNaming] Starting tracking for", c._id);
+              setNamingInProgress((prev: Set<string>) => {
+                const next = new Set(prev);
+                next.add(c._id);
+                console.log("[AutoNaming] Added to set, size:", next.size);
+                return next;
+              });
+            }
+          }
+        } else {
+          const MAX_PAYLOAD_SIZE = 102_400;
+          const fullHistory = [...messages, { role: "user", text }];
+          body.history = [...fullHistory];
+          body.expertWeights = guestWeights;
+
+          let serialized = JSON.stringify(body);
+          while (
+            serialized.length > MAX_PAYLOAD_SIZE &&
+            body.history.length > 1
+          ) {
+            body.history.shift();
+            serialized = JSON.stringify(body);
+          }
+        }
+
+        const res = await fetch(`${API_BASE_URL}/api/chat?stream=true`, {
+          method: "POST",
+          signal: abortControllerRef.current?.signal,
+          headers: {
+            "Content-Type": "application/json",
+            ...(isAuthed
+              ? { Authorization: `Bearer ${Cookies.get("homemind_token")}` }
+              : {}),
+          },
+          body: JSON.stringify(body),
+        });
+
+        if (!res.ok) {
+          throw new Error("Stream request failed");
+        }
+
+        const reader = res.body?.getReader();
+        if (!reader) {
+          throw new Error("No reader available");
+        }
+
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let currentEventType = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            if (!line.trim() || line.startsWith(":")) continue;
+
+            if (line.startsWith("event: ")) {
+              currentEventType = line.slice(7).trim();
+              continue;
+            }
+
+            if (line.startsWith("data: ")) {
+              const data = line.slice(6);
+              try {
+                const parsed = JSON.parse(data);
+
+                if (parsed.token) {
+                  streamedText += parsed.token;
+
+                  // Log if this is the timeout note
+                  if (parsed.token.includes("âš ï¸")) {
+                    console.log(
+                      "[Frontend-Timeout] Received timeout note token. Total length:",
+                      streamedText.length,
+                    );
+                  }
+
+                  setMessages((m: ChatMessage[]) => {
+                    const updated = [...m];
+                    const existing = updated[streamingMessageIndex];
+                    updated[streamingMessageIndex] = {
+                      ...existing,
+                      role: "model",
+                      text: streamedText,
+                      expertViews: receivedExpertViews,
+                    };
+                    return updated;
+                  });
+                } else if (parsed.expertViews) {
+                  receivedExpertViews = parsed.expertViews;
+                  setMessages((m: ChatMessage[]) => {
+                    const updated = [...m];
+                    const existing = updated[streamingMessageIndex];
+                    updated[streamingMessageIndex] = {
+                      ...existing,
+                      role: "model",
+                      text: streamedText,
+                      expertViews: parsed.expertViews,
+                    };
+                    return updated;
+                  });
+                } else if (parsed.expertWeights) {
+                  receivedWeights = parsed.expertWeights;
+                } else if (parsed.convoId) {
+                  receivedConvoId = parsed.convoId;
+
+                  if (
+                    isAuthed &&
+                    isFirstMessage &&
+                    !hasTimedOut &&
+                    receivedConvoId
+                  ) {
+                    startTitlePolling(
+                      receivedConvoId,
+                      setLocalConvos,
+                      setNamingInProgress,
+                    );
+                  }
+                } else if (
+                  currentEventType === "timeout" ||
+                  parsed.message?.includes("timeout")
+                ) {
+                  // Handle timeout event
+                  hasTimedOut = true;
+                  console.log(
+                    "[Frontend-Timeout] Timeout event received. StreamedText length:",
+                    streamedText.length,
+                    "Contains timeout note:",
+                    streamedText.includes("âš ï¸"),
+                  );
+
+                  // If timeout note is not already in the streamed text, add it
+                  if (!streamedText.includes("âš ï¸")) {
+                    const timeoutNote =
+                      "\n\n---\n\nâš ï¸ **Note:** This response was cut off due to cloud infrastructure timeout limits (60 seconds). The partial response has been saved. Please try rephrasing or breaking down your request into smaller parts.";
+                    streamedText += timeoutNote;
+                    console.log(
+                      "[Frontend-Timeout] Manually appended timeout note. New length:",
+                      streamedText.length,
+                    );
+
+                    // Update the message with the timeout note
+                    setMessages((m: ChatMessage[]) => {
+                      const updated = [...m];
+                      const existing = updated[streamingMessageIndex];
+                      updated[streamingMessageIndex] = {
+                        ...existing,
+                        role: "model",
+                        text: streamedText,
+                        expertViews: receivedExpertViews,
+                      };
+                      return updated;
+                    });
+                  }
+
+                  toast.error(
+                    "Response timed out due to cloud infrastructure limits",
+                    { duration: 5000 },
+                  );
+                } else if (
+                  currentEventType === "done" ||
+                  parsed.timedOut !== undefined
+                ) {
+                  // Handle done event - ensure timeout note is preserved
+                  if (parsed.timedOut && !streamedText.includes("âš ï¸")) {
+                    const timeoutNote =
+                      "\n\n---\n\nâš ï¸ **Note:** This response was cut off due to cloud infrastructure timeout limits (60 seconds). The partial response has been saved. Please try rephrasing or breaking down your request into smaller parts.";
+                    streamedText += timeoutNote;
+                    console.log(
+                      "[Frontend-Done] Appended timeout note on done event. Length:",
+                      streamedText.length,
+                    );
+
+                    // Update the message with the timeout note
+                    setMessages((m: ChatMessage[]) => {
+                      const updated = [...m];
+                      updated[streamingMessageIndex] = {
+                        role: "model",
+                        text: streamedText,
+                        expertViews: receivedExpertViews,
+                      };
+                      return updated;
+                    });
+                  }
+                  console.log(
+                    "[Frontend-Done] Done event received. TimedOut:",
+                    parsed.timedOut,
+                    "Final text length:",
+                    streamedText.length,
+                  );
+                } else if (parsed.error) {
+                  throw new Error(parsed.error);
+                }
+                // Reset event type after processing
+                currentEventType = "";
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              } catch (e: any) {
+                console.error("Error parsing SSE data:", e);
+                if (
+                  e?.message &&
+                  e.message !== "Unexpected end of JSON input"
+                ) {
+                  throw e;
+                }
+              }
+            }
+          }
+        }
+
+        // Update guest weights if applicable
+        if (!isAuthed && receivedWeights) {
+          setGuestWeights(receivedWeights);
+          localStorage.setItem(
+            "homemindGuestWeights",
+            JSON.stringify(receivedWeights),
+          );
+        }
+
+        // Refresh conversations if needed
+        if (isAuthed && receivedConvoId) {
+          const r = await fetch(`${API_BASE_URL}/api/conversations`, {
+            headers: {
+              Authorization: `Bearer ${Cookies.get("homemind_token")}`,
+            },
+          });
+          if (r.ok) setLocalConvos(await r.json());
+        }
+
+        return true;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } catch (error: any) {
+        if (error?.name === "AbortError") {
+          return false;
+        }
+        console.error(`Stream attempt ${retryCount + 1} failed:`, error);
+
+        // Check if it's a rate limit or specific API error
+        const errorMsg = error?.message || "";
+        const isRateLimit =
+          errorMsg.includes("rate limit") || errorMsg.includes("Rate limit");
+        const isApiError =
+          errorMsg.includes("Google AI") ||
+          errorMsg.includes("property database");
+
+        if (isRateLimit || isApiError) {
+          // Don't retry for rate limit or specific API errors
+          toast.error(errorMsg);
+          return false;
+        }
+
+        if (retryCount < MAX_RETRIES - 1) {
+          retryCount++;
+          toast.error(
+            `Connection lost. Retrying (${retryCount}/${MAX_RETRIES})...`,
+          );
+          await new Promise((resolve) =>
+            setTimeout(resolve, 1000 * retryCount),
+          );
+          return attemptStream();
+        }
+
+        return false;
+      }
+    };
+
+    try {
+      const success = await attemptStream();
+
+      if (!success) {
+        // Error message already shown in attemptStream
+        // Remove the empty streaming message on failure
+        setMessages((m: ChatMessage[]) => m.slice(0, -1));
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (error: any) {
+      if (error?.name !== "AbortError") {
+        console.error("Error sending message:", error);
+        const errorMsg =
+          error?.message || "Error processing your message. Please try again.";
+        toast.error(errorMsg);
+      }
+      // Remove the empty streaming message on error or abort
+      setMessages((m: ChatMessage[]) => m.slice(0, -1));
+    } finally {
+      setLoading(false);
+      // Remove from loading conversations
+      setLoadingConversations((prev) => {
+        const next = new Set(prev);
+        next.delete(currentConvoId);
+        if (receivedConvoId) next.delete(receivedConvoId);
+        next.delete("pending");
+        console.log("[LoadingConvo] Removed from loading set");
+        return next;
+      });
+
+      // Stop pulsing animation when streaming completes
+      // The background polling will continue to update the title if needed
+      if (receivedConvoId || currentConvoId) {
+        // Small delay to let the polling finish if it's about to complete
+        setTimeout(() => {
+                      setNamingInProgress((prev: Set<string>) => {
+            const next = new Set(prev);
+            if (receivedConvoId) next.delete(receivedConvoId);
+            if (currentConvoId !== "pending") next.delete(currentConvoId);
+            console.log(
+              "[AutoNaming] Stopped pulsing animation, size:",
+              next.size,
+            );
+            return next;
+          });
+        }, 1000);
+      }
+    }
+  };
+
+  /**
+   * Rate a specific model message.
+   */
+  const rateConversation = async (vote: "up" | "down", idx: number) => {
+    // persists ratings
+    const newRatings = { ...ratings, [idx]: vote };
+    setRatings(newRatings);
+
+    // if no expertViews, just toast and return
+    const msg = messages[idx];
+    if (!msg.expertViews) {
+      toast.success(
+        vote === "up"
+          ? "Thanks for the feedback!"
+          : "Got it â€“ we'll try to improve!",
+      );
+      return;
+    }
+
+    // otherwise call the API
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const payload: any = { rating: vote };
+    if (!isAuthed) payload.expertWeights = guestWeights;
+    else if (selectedConvoId) payload.convoId = selectedConvoId;
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/chat/rate`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(isAuthed
+            ? { Authorization: `Bearer ${Cookies.get("homemind_token")}` }
+            : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error("Failed to record feedback");
+      const j = await res.json();
+      if (!isAuthed && j.expertWeights) {
+        setGuestWeights(j.expertWeights);
+        localStorage.setItem(
+          "homemindGuestWeights",
+          JSON.stringify(j.expertWeights),
+        );
+      }
+      toast.success(
+        vote === "up"
+          ? "Thanks for the feedback!"
+          : "Got it â€“ we'll try to improve!",
+      );
+    } catch {
+      toast.error("Could not record feedback");
+    }
+  };
+
+  const lastIdx = messages.length - 1;
+
+  return (
+    <div className="flex flex-1 flex-col min-h-0">
+      <motion.div
+        ref={messagesContainerRef}
+        className={`relative flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 ${showEmptyState ? "space-y-0" : "space-y-2"}`}
+        role="log"
+        aria-live="polite"
+        aria-label="Chat messages"
+        variants={containerVariants}
+        initial="hidden"
+        animate="visible"
+      >
+        {!showEmptyState && (
+          <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+            <motion.div
+              className="absolute -top-10 -left-16 h-64 w-64 bg-primary/14 blur-3xl rounded-full"
+              animate={{ y: [0, 16, 0], opacity: [0.45, 0.65, 0.45] }}
+              transition={{ duration: 16, repeat: Infinity, ease: "easeInOut" }}
+            />
+            <motion.div
+              className="absolute bottom-10 right-0 h-72 w-72 bg-amber-400/14 dark:bg-blue-400/14 blur-3xl rounded-full"
+              animate={{ y: [0, -18, 0], opacity: [0.4, 0.6, 0.4] }}
+              transition={{ duration: 18, repeat: Infinity, ease: "easeInOut" }}
+            />
+            <motion.div
+              className="absolute top-1/3 right-1/4 h-52 w-52 bg-emerald-400/14 blur-3xl rounded-full"
+              animate={{ x: [0, 12, -12, 0], opacity: [0.35, 0.55, 0.35] }}
+              transition={{ duration: 20, repeat: Infinity, ease: "easeInOut" }}
+            />
+          </div>
+        )}
+        {convLoading && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Loader2 className="animate-spin w-10 h-10" />
+          </div>
+        )}
+
+        {showEmptyState ? (
+          <div className="relative h-full w-full flex items-start sm:items-center justify-center overflow-hidden px-2 sm:px-4 py-4 sm:py-0">
+            <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-3xl">
+              <motion.div
+                className="absolute -top-24 -left-10 h-72 w-72 bg-primary/15 blur-3xl rounded-full"
+                animate={{ y: [0, 20, 0], opacity: [0.7, 1, 0.7] }}
+                transition={{
+                  duration: 12,
+                  repeat: Infinity,
+                  ease: "easeInOut",
+                }}
+              />
+              <motion.div
+                className="absolute -bottom-20 right-0 h-80 w-80 bg-amber-400/10 dark:bg-blue-400/10 blur-3xl rounded-full"
+                animate={{ y: [0, -15, 0], opacity: [0.6, 0.9, 0.6] }}
+                transition={{
+                  duration: 14,
+                  repeat: Infinity,
+                  ease: "easeInOut",
+                }}
+              />
+              <motion.div
+                className="absolute top-10 right-1/3 h-40 w-40 bg-emerald-400/10 blur-3xl rounded-full"
+                animate={{ x: [0, 10, -10, 0], opacity: [0.5, 0.9, 0.5] }}
+                transition={{
+                  duration: 16,
+                  repeat: Infinity,
+                  ease: "easeInOut",
+                }}
+              />
+            </div>
+
+            <div className="relative z-10 w-full max-w-5xl space-y-6 sm:space-y-8 text-center px-4 sm:px-6 max-h-full overflow-y-auto sm:overflow-visible pb-6 sm:pb-0">
+              <div className="space-y-3">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 text-primary text-sm font-medium">
+                  <BotMessageSquare className="w-4 h-4" />
+                  <span>HomeMind Concierge</span>
+                </div>
+                <h2 className="text-2xl sm:text-3xl font-semibold text-foreground">
+                  Start planning your next move
+                </h2>
+                <p className="text-muted-foreground max-w-2xl mx-auto">
+                  Tell us what you are looking for and we will combine market
+                  data, neighborhood insights, and route planning to help.
+                </p>
+              </div>
+
+              <div className="bg-card/80 border border-border/60 rounded-2xl shadow-2xl backdrop-blur p-4 sm:p-5">
+                <div className="flex flex-col sm:flex-row gap-3 items-center w-full">
+                  <Input
+                    ref={inputRef}
+                    placeholder="Ask about homes, taxes, neighborhoods, or investment returns..."
+                    value={userInput}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                      setUserInput(e.target.value)
+                    }
+                    onKeyDown={handleInputKeyDown}
+                    className="flex-1 h-12 min-h-[48px] text-base w-full"
+                  />
+                  {loading ? (
+                    <Button
+                      variant="destructive"
+                      onClick={handleStopGeneration}
+                      className="flex gap-2 cursor-pointer h-12 min-h-[48px] px-5 w-full sm:w-auto justify-center"
+                      title="Stop generating"
+                    >
+                      <Square className="h-4 w-4 fill-current" /> Stop
+                    </Button>
+                  ) : (
+                    <Button
+                      onClick={handleSend}
+                      disabled={loading}
+                      className="flex gap-2 cursor-pointer h-12 min-h-[48px] px-5 w-full sm:w-auto justify-center"
+                      title="Send message (Enter)"
+                    >
+                      <Send className="h-4 w-4" /> Start chatting
+                    </Button>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground mt-3">
+                  We will personalize suggestions based on your prompts. You can
+                  refine or pick a suggestion below.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Suggested prompts
+                </div>
+                <div className="space-y-3">
+                  <div
+                    className="relative w-full max-w-[calc(100vw-32px)] sm:max-w-full mx-auto overflow-hidden rounded-2xl border border-border/60 bg-background/60 backdrop-blur py-3 sm:py-4 min-h-[120px] sm:min-h-[140px]"
+                    style={{
+                      maskImage:
+                        "linear-gradient(90deg, transparent 0, #000 14%, #000 86%, transparent 100%)",
+                      WebkitMaskImage:
+                        "linear-gradient(90deg, transparent 0, #000 14%, #000 86%, transparent 100%)",
+                    }}
+                  >
+                    <div className="absolute inset-0 flex items-center">
+                      <div
+                        className="inline-flex gap-2 sm:gap-3 px-3 animate-marquee-left"
+                        style={{
+                          minWidth: "max-content",
+                          width: "max-content",
+                        }}
+                      >
+                        {marqueeRowOneLoop.map((prompt, idx) => (
+                          <button
+                            key={`row1-${idx}-${prompt}`}
+                            onClick={() => handlePrefillPrompt(prompt)}
+                            className="group flex-shrink-0 text-left rounded-xl border border-border/70 bg-card/90 px-4 py-3 shadow-sm transition-transform duration-200 ease-out hover:-translate-y-0.5 hover:shadow-[0_12px_30px_-20px_rgba(0,0,0,0.45)] hover:border-primary/30 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 whitespace-normal break-words"
+                            style={{
+                              minWidth: "min(210px, 80vw)",
+                              maxWidth: "min(280px, 88vw)",
+                            }}
+                          >
+                            <div className="text-sm font-semibold text-foreground leading-tight">
+                              {prompt}
+                            </div>
+                            <div className="mt-2 text-[11px] text-muted-foreground group-hover:text-foreground">
+                              Tap to prefill
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <div
+                    className="relative w-full max-w-[calc(100vw-32px)] sm:max-w-full mx-auto overflow-hidden rounded-2xl border border-border/60 bg-background/60 backdrop-blur py-3 sm:py-4 min-h-[120px] sm:min-h-[140px]"
+                    style={{
+                      maskImage:
+                        "linear-gradient(90deg, transparent 0, #000 14%, #000 86%, transparent 100%)",
+                      WebkitMaskImage:
+                        "linear-gradient(90deg, transparent 0, #000 14%, #000 86%, transparent 100%)",
+                    }}
+                  >
+                    <div className="absolute inset-0 flex items-center">
+                      <div
+                        className="inline-flex gap-2 sm:gap-3 px-3 animate-marquee-right"
+                        style={{
+                          minWidth: "max-content",
+                          width: "max-content",
+                        }}
+                      >
+                        {marqueeRowTwoLoop.map((prompt, idx) => (
+                          <button
+                            key={`row2-${idx}-${prompt}`}
+                            onClick={() => handlePrefillPrompt(prompt)}
+                            className="group flex-shrink-0 text-left rounded-xl border border-border/70 bg-card/90 px-4 py-3 shadow-sm transition-transform duration-200 ease-out hover:-translate-y-0.5 hover:shadow-[0_12px_30px_-20px_rgba(0,0,0,0.45)] hover:border-primary/30 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 whitespace-normal break-words"
+                            style={{
+                              minWidth: "min(210px, 80vw)",
+                              maxWidth: "min(280px, 88vw)",
+                            }}
+                          >
+                            <div className="text-sm font-semibold text-foreground leading-tight">
+                              {prompt}
+                            </div>
+                            <div className="mt-2 text-[11px] text-muted-foreground group-hover:text-foreground">
+                              Tap to prefill
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <TermsNotice className="mx-auto mt-4" showIcon={false} />
+            </div>
+          </div>
+        ) : (
+          <>
+            <AnimatePresence>
+              {!convLoading &&
+                messages.map((m: ChatMessage, i: number) => (
+                  <MessageBubble
+                    key={m.id ?? crypto.randomUUID()}
+                    msg={m}
+                    idx={i}
+                    isLast={i === lastIdx}
+                    ratings={ratings}
+                    loading={loading}
+                    latestMessageRef={latestMessageRef}
+                    loadingPhases={loadingPhases}
+                    phaseIdx={phaseIdx}
+                    rateConversation={rateConversation}
+                  />
+                ))}
+            </AnimatePresence>
+
+            {loading && messages.length === 0 && (
+              <motion.div
+                variants={bubbleVariants}
+                initial="hidden"
+                animate="visible"
+                className="flex justify-start mb-2"
+              >
+                <div className="bg-muted p-2 rounded-lg shadow-lg flex items-center gap-2 animate-pulse">
+                  {(() => {
+                    const { Icon } = loadingPhases[phaseIdx];
+                    return <Icon className="w-5 h-5" />;
+                  })()}
+                  <span className="font-medium">
+                    {loadingPhases[phaseIdx].text}
+                    <AnimatedDots resetKey={phaseIdx} />
+                  </span>
+                </div>
+              </motion.div>
+            )}
+
+            {showScrollToBottom && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                className="absolute bottom-4 right-4 z-10"
+              >
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={scrollToBottom}
+                      className="rounded-full shadow-lg h-10 w-10 p-0"
+                      aria-label="Scroll to latest message"
+                    >
+                      <ChevronDown className="w-5 h-5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Scroll to latest</TooltipContent>
+                </Tooltip>
+              </motion.div>
+            )}
+          </>
+        )}
+      </motion.div>
+
+      {!showEmptyState && (
+        <div className="flex flex-col flex-shrink-0 px-4 pb-4 pt-3">
+          <div className="flex gap-2">
+            <Input
+              ref={inputRef}
+              placeholder="Type your message… (Enter to send)"
+              value={userInput}
+              onChange={(e) => setUserInput(e.target.value)}
+              onKeyDown={handleInputKeyDown}
+              className="flex-1"
+            />
+            {loading ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="destructive"
+                    onClick={handleStopGeneration}
+                    className="flex gap-1 cursor-pointer"
+                    title="Stop generating"
+                    aria-label="Stop generating"
+                  >
+                    <Square className="h-4 w-4 fill-current" /> Stop
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Stop generating response</TooltipContent>
+              </Tooltip>
+            ) : (
+              <Button
+                onClick={handleSend}
+                disabled={loading}
+                className="flex gap-1 cursor-pointer"
+                title="Send message (Enter)"
+              >
+                <Send className="h-4 w-4" /> Send
+              </Button>
+            )}
+          </div>
+          <TermsNotice className="mx-auto mt-2" showIcon={false} />
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ----------------------------------------------------------
+// AnimatedDots Component
+// ----------------------------------------------------------
+const AnimatedDots: React.FC<{ resetKey: number }> = ({ resetKey }) => {
+  const [dots, setDots] = useState("");
+  useEffect(() => {
+    // restart dots when resetKey changes
+    setDots("");
+    const interval = setInterval(() => {
+      setDots((prev: string) => (prev.length < 3 ? prev + "." : ""));
+    }, 500);
+    return () => clearInterval(interval);
+  }, [resetKey]);
+  return <span>{dots}</span>;
+};
+
+function TermsNotice({
+  className = "",
+  showIcon = true,
+}: Readonly<{
+  className?: string;
+  showIcon?: boolean;
+}>) {
+  return (
+    <p
+      className={`inline-flex flex-wrap items-center justify-center rounded-full border border-border/60 bg-background/70 px-3 py-1 text-[11px] text-muted-foreground shadow-sm backdrop-blur ${className}`.trim()}
+    >
+      <span>
+        By using HomeMind, you agree to our{" "}
+        <Link
+          href="/terms"
+          className="underline underline-offset-4 decoration-muted-foreground/60 transition-colors hover:text-primary hover:decoration-primary/60"
+        >
+          Terms of Service
+        </Link>{" "}
+        and{" "}
+        <Link
+          href="/privacy"
+          className="underline underline-offset-4 decoration-muted-foreground/60 transition-colors hover:text-primary hover:decoration-primary/60"
+        >
+          Privacy Policy
+        </Link>
+        .
+      </span>
+      {showIcon && (
+        <BotMessageSquare
+          className="inline-block w-4 h-4 ml-1 text-muted-foreground/80 hover:text-primary"
+          aria-hidden="true"
+        />
+      )}
+    </p>
+  );
+}
+
+// ----------------------------------------------------------
+//  Main ChatPage Layout: Sidebar + Top Bar + ChatWindow
+// ----------------------------------------------------------
+export default function ChatPage() {
+  const isAuthed = !!Cookies.get("homemind_token");
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [conversations, setConversations] = useState<any[]>([]);
+  const [conversationLoading, setConversationLoading] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [selectedConvo, setSelectedConvo] = useState<any>(null);
+  const [sidebarVisible, setSidebarVisible] = useState(false);
+  const [namingInProgress, setNamingInProgress] = useState<Set<string>>(
+    new Set(),
+  );
+  const [loadingConversations, setLoadingConversations] = useState<Set<string>>(
+    new Set(),
+  );
+  const [showShortcuts, setShowShortcuts] = useState(false);
+
+  useEffect(() => {
+    const isMobile = globalThis.window.innerWidth < 768;
+    if (isMobile) {
+      setSidebarVisible(false);
+      return;
+    }
+    const saved = localStorage.getItem("sidebarVisible");
+    if (saved !== null) {
+      setSidebarVisible(saved === "true");
+      return;
+    }
+    const defaultVisible = isAuthed
+      ? globalThis.window.innerWidth >= 768
+      : false;
+    setSidebarVisible(defaultVisible);
+    localStorage.setItem("sidebarVisible", defaultVisible.toString());
+  }, [isAuthed]);
+
+  const toggleSidebar = () => {
+    setSidebarVisible((prev: boolean) => {
+      const newState = !prev;
+      localStorage.setItem("sidebarVisible", newState.toString());
+      return newState;
+    });
+  };
+
+  const refreshConvos = async () => {
+    setConversationLoading(true);
+
+    try {
+      if (isAuthed) {
+        const token = Cookies.get("homemind_token");
+        const res = await fetch(`${API_BASE_URL}/api/conversations`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setConversations(data);
+        } else {
+          toast.error("Failed to load conversations", {
+            action: { label: "Retry", onClick: () => { void refreshConvos(); } },
+          });
+        }
+      } else {
+        const local = loadGuestConvos();
+        setConversations(local);
+      }
+    } catch (err) {
+      console.error("Error fetching conversations:", err);
+      toast.error("Error fetching conversations", {
+        action: { label: "Retry", onClick: () => { void refreshConvos(); } },
+      });
+    } finally {
+      setConversationLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    refreshConvos();
+  }, [isAuthed]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (isAuthed) return;
+    if (conversations.length === 0) {
+      if (selectedConvo) setSelectedConvo(null);
+      return;
+    }
+    const stillExists = selectedConvo
+      ? conversations.some((conv) => conv._id === selectedConvo._id)
+      : false;
+    if (!stillExists) {
+      setSelectedConvo(conversations[0]);
+    }
+  }, [isAuthed, conversations, selectedConvo]);
+
+  const handleGuestNewConvo = () => {
+    if (isAuthed) return;
+    const convo = buildGuestConversation([]);
+    setConversations((prev: GuestConversation[]) => {
+      const next = [convo, ...prev];
+      persistGuestConvos(next);
+      return next;
+    });
+    setSelectedConvo(convo);
+    localStorage.setItem(LOCAL_CHAT_KEY, JSON.stringify([]));
+  };
+
+  const handleGuestDeleteConvo = () => {
+    if (isAuthed) return;
+    if (!selectedConvo) {
+      localStorage.setItem(LOCAL_CHAT_KEY, JSON.stringify([]));
+      return;
+    }
+    const local = loadGuestConvos();
+    const next = local.filter(
+      (conv: GuestConversation) => conv._id !== selectedConvo._id,
+    );
+    persistGuestConvos(next);
+    setConversations(next);
+    if (next.length > 0) {
+      setSelectedConvo(next[0]);
+      localStorage.setItem(
+        LOCAL_CHAT_KEY,
+        JSON.stringify(next[0]?.messages ?? []),
+      );
+    } else {
+      setSelectedConvo(null);
+      localStorage.setItem(LOCAL_CHAT_KEY, JSON.stringify([]));
+    }
+    toast.success("Conversation deleted successfully");
+  };
+
+  return (
+    <>
+      <Head>
+        <title>Chat | HomeMind</title>
+        <meta
+          name="description"
+          content="Chat with HomeMind for personalized property recommendations"
+        />
+      </Head>
+      <ClientOnly>
+        <div className="min-h-[100dvh] h-[100dvh] flex dark:bg-background dark:text-foreground relative overflow-hidden bg-[radial-gradient(circle_at_20%_20%,rgba(99,102,241,0.06),transparent_35%),radial-gradient(circle_at_80%_0%,rgba(16,185,129,0.05),transparent_30%)]">
+          <style jsx global>{`
+            html {
+              scroll-behavior: smooth;
+            }
+
+            html,
+            body {
+              overscroll-behavior: none;
+              overflow-x: hidden;
+            }
+
+            @keyframes pulse-gentle {
+              0%,
+              100% {
+                opacity: 1;
+              }
+              50% {
+                opacity: 0.6;
+              }
+            }
+
+            .animate-pulse-gentle {
+              animation: pulse-gentle 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+            }
+
+            @keyframes marquee-left {
+              from {
+                transform: translateX(0);
+              }
+              to {
+                transform: translateX(-50%);
+              }
+            }
+
+            @keyframes marquee-right {
+              from {
+                transform: translateX(-50%);
+              }
+              to {
+                transform: translateX(0);
+              }
+            }
+
+            .animate-marquee-left {
+              animation: marquee-left 32s linear infinite;
+            }
+
+            .animate-marquee-right {
+              animation: marquee-right 34s linear infinite;
+            }
+          `}</style>
+          <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+            <motion.div
+              className="absolute -left-32 top-10 h-80 w-80 bg-primary/25 blur-3xl rounded-full"
+              animate={{ y: [0, 25, 0], opacity: [0.6, 0.85, 0.6] }}
+              transition={{ duration: 18, repeat: Infinity, ease: "easeInOut" }}
+            />
+            <motion.div
+              className="absolute right-10 bottom-0 h-[22rem] w-[22rem] bg-emerald-400/18 blur-3xl rounded-full"
+              animate={{ y: [0, -20, 0], opacity: [0.5, 0.8, 0.5] }}
+              transition={{ duration: 20, repeat: Infinity, ease: "easeInOut" }}
+            />
+            <motion.div
+              className="absolute left-1/2 top-1/2 h-64 w-64 -translate-x-1/2 -translate-y-1/2 bg-amber-400/18 dark:bg-cyan-400/18 blur-3xl rounded-full"
+              animate={{ x: [0, 12, -12, 0], opacity: [0.45, 0.75, 0.45] }}
+              transition={{ duration: 22, repeat: Infinity, ease: "easeInOut" }}
+            />
+          </div>
+          {/* Desktop sidebar and content container */}
+          <div className="flex flex-1">
+            {/* Sidebar (desktop only) */}
+            <div className="hidden md:block">
+              <motion.div
+                className="overflow-hidden"
+                variants={desktopSidebarVariants}
+                animate={sidebarVisible ? "visible" : "hidden"}
+                initial="visible"
+              >
+                <Sidebar
+                  conversationLoading={conversationLoading}
+                  conversations={conversations}
+                  onSelect={(conv: GuestConversation) => setSelectedConvo(conv)}
+                  isAuthed={isAuthed}
+                  refreshConvos={refreshConvos}
+                  sidebarVisible={true}
+                  toggleSidebar={toggleSidebar}
+                  selectedConvoId={selectedConvo ? selectedConvo._id : null}
+                  namingInProgress={namingInProgress}
+                  loadingConversations={loadingConversations}
+                  isStreaming={loadingConversations.size > 0}
+                />
+              </motion.div>
+            </div>
+            {/* Main content */}
+            <div className="flex-1 flex flex-col min-h-0 duration-600 ease-in-out">
+              <TopBar
+                onNewConvo={handleGuestNewConvo}
+                onDeleteConvo={handleGuestDeleteConvo}
+                toggleSidebar={toggleSidebar}
+                sidebarVisible={sidebarVisible}
+                isStreaming={loadingConversations.size > 0}
+              />
+              <ChatWindow
+                isAuthed={isAuthed}
+                localConvos={conversations}
+                setLocalConvos={setConversations}
+                selectedConvoId={selectedConvo ? selectedConvo._id : null}
+                onSetSelectedConvo={setSelectedConvo}
+                namingInProgress={namingInProgress}
+                setNamingInProgress={setNamingInProgress}
+                loadingConversations={loadingConversations}
+                setLoadingConversations={setLoadingConversations}
+              />
+            </div>
+          </div>
+          <div className="md:hidden">
+            <Sidebar
+              conversationLoading={conversationLoading}
+              conversations={conversations}
+              onSelect={(conv: GuestConversation) => setSelectedConvo(conv)}
+              isAuthed={isAuthed}
+              refreshConvos={refreshConvos}
+              sidebarVisible={sidebarVisible}
+              toggleSidebar={toggleSidebar}
+              selectedConvoId={selectedConvo ? selectedConvo._id : null}
+              namingInProgress={namingInProgress}
+              loadingConversations={loadingConversations}
+              isStreaming={loadingConversations.size > 0}
+            />
+          </div>
+        </div>
+      </ClientOnly>
+      <KeyboardShortcutsDialog
+        open={showShortcuts}
+        onOpenChange={setShowShortcuts}
+      />
+    </>
+  );
+}

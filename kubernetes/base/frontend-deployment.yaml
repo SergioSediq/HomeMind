@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: homemind-frontend
+  labels:
+    app: homemind-frontend
+    app.kubernetes.io/part-of: homemind
+  namespace: homemind
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: homemind-frontend
+  template:
+    metadata:
+      labels:
+        app: homemind-frontend
+        app.kubernetes.io/part-of: homemind
+      annotations:
+        consul.hashicorp.com/connect-service: "homemind-frontend"
+        consul.hashicorp.com/connect-service-port: "http"
+    spec:
+      containers:
+        - name: frontend
+          image: ghcr.io/your-org/homemind-app-frontend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+              name: http
+          env:
+            - name: NEXT_PUBLIC_API_BASE_URL
+              value: "https://api.homemind.local"
+          resources:
+            requests:
+              cpu: 150m
+              memory: 256Mi
+            limits:
+              cpu: 300m
+              memory: 512Mi

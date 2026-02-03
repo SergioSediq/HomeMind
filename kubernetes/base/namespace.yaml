@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: homemind
+  labels:
+    app.kubernetes.io/part-of: homemind
+  annotations:
+    consul.hashicorp.com/connect-inject: "true"

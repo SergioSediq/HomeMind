@@ -1,0 +1,15 @@
+# GitHub Repository Description (paste into repo Settings → General → Description)
+
+## Short (recommended – fits GitHub's ~350 char limit):
+🏠✨ AI-powered home search assistant · Real estate chatbot with RAG, Neo4j graph, LLM & Mixture-of-Experts · Chapel Hill, NC & beyond
+
+## Alternative options:
+
+**Emoji-heavy:**
+🏡🤖💬 AI real estate concierge · Pinecone + Neo4j · Smart property recommendations · Next.js + Express
+
+**Feature-focused:**
+🏠✨ HomeMind – Your intelligent home search assistant. AI chatbot, hybrid RAG, market insights, neighborhood data & route planning.
+
+**Tech-focused:**
+🤖🏡 Full-stack AI real estate chatbot · TypeScript · Next.js · Express · Pinecone · Neo4j · LLM · Chapel Hill, NC

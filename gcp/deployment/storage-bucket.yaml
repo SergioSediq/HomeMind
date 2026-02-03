@@ -1,0 +1,20 @@
+resources:
+  - name: homemind-assets
+    type: storage.v1.bucket
+    properties:
+      location: us-east1
+      storageClass: STANDARD
+      iamConfiguration:
+        uniformBucketLevelAccess:
+          enabled: true
+      cors:
+        - origin: ['https://*.homemind.app']
+          method: ['GET', 'HEAD']
+          responseHeader: ['*']
+          maxAgeSeconds: 3600
+      versioning:
+        enabled: true
+
+outputs:
+  - name: bucketUrl
+    value: gs://$(ref.homemind-assets.name)

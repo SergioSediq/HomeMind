@@ -1,0 +1,17 @@
+Helm release "{{ .Release.Name }}" deployed in namespace "{{ include "homemind.namespace" . }}".
+
+Services:
+{{- if .Values.frontend.enabled }}
+- Frontend: {{ include "homemind.componentName" (dict "root" . "component" "frontend") }}
+{{- end }}
+{{- if .Values.backend.enabled }}
+- Backend: {{ include "homemind.componentName" (dict "root" . "component" "backend") }}
+{{- end }}
+{{- if .Values.grpc.enabled }}
+- gRPC: {{ include "homemind.componentName" (dict "root" . "component" "grpc") }}
+{{- end }}
+{{- if .Values.mcp.enabled }}
+- MCP: {{ include "homemind.componentName" (dict "root" . "component" "mcp") }}
+{{- end }}
+
+If you did not create secrets via Helm, ensure {{ .Values.secrets.name }} exists in the namespace.

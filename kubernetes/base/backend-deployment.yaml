@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: homemind-backend
+  labels:
+    app: homemind-backend
+    app.kubernetes.io/part-of: homemind
+  namespace: homemind
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: homemind-backend
+  template:
+    metadata:
+      labels:
+        app: homemind-backend
+        app.kubernetes.io/part-of: homemind
+      annotations:
+        consul.hashicorp.com/connect-service: "homemind-backend"
+        consul.hashicorp.com/connect-service-port: "http"
+    spec:
+      containers:
+        - name: backend
+          image: ghcr.io/your-org/homemind-app-backend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3001
+              name: http
+          envFrom:
+            - configMapRef:
+                name: homemind-shared-config
+          env:
+            - name: MONGO_URI
+              valueFrom:
+                secretKeyRef:
+                  name: homemind-secrets
+                  key: mongoUri
+            - name: GOOGLE_AI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: homemind-secrets
+                  key: googleAiApiKey
+            - name: PINECONE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: homemind-secrets
+                  key: pineconeApiKey
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: homemind-secrets
+                  key: jwtSecret
+            - name: PINECONE_INDEX
+              valueFrom:
+                secretKeyRef:
+                  name: homemind-secrets
+                  key: pineconeIndex
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3001
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3001
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
